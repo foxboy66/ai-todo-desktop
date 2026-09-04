@@ -18,5 +18,8 @@ describe('Windows launcher', () => {
     expect(powershellText).toContain("'rebuild', 'better-sqlite3', '--runtime=electron'")
     expect(powershellText).toContain('Push-Location $productRoot')
     expect(powershellText).toContain('--dist-url=https://electronjs.org/headers')
+
+    const viteConfig = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf8')
+    expect(viteConfig).toContain("base: './'")
   })
 })

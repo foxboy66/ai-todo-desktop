@@ -20,6 +20,24 @@ if (-not (Test-Path (Join-Path $productRoot 'node_modules'))) {
   Write-Host '首次运行，正在安装桌面端依赖…' -ForegroundColor Cyan
   Invoke-Npm @('install')
 }
+Push-Location $productRoot
+try {
+  $electronVersion = ((& npm.cmd exec electron -- --version | Select-Object -Last 1).Trim())
+} finally {
+  Pop-Location
+}
+if ($electronVersion.StartsWith('v')) { $electronVersion = $electronVersion.Substring(1) }
+if ($electronVersion -notmatch '^\d+\.\d+\.\d+$') {
+  throw "无法识别 Electron 版本：$electronVersion"
+}
+$nativeVersionMarker = Join-Path $productRoot 'node_modules\.ai-todo-electron-version'
+$nativeVersion = if (Test-Path $nativeVersionMarker) { (Get-Content -Raw -LiteralPath $nativeVersionMarker).Trim() } else { '' }
+if ($nativeVersion -ne $electronVersion) {
+  Write-Host "正在为 Electron $electronVersion 重建 SQLite 原生模块…" -ForegroundColor Cyan
+  Invoke-Npm @('rebuild', 'better-sqlite3', '--runtime=electron', "--target=$electronVersion", '--dist-url=https://electronjs.org/headers')
+  [System.IO.File]::WriteAllText($nativeVersionMarker, $electronVersion, [System.Text.UTF8Encoding]::new($false))
+}
+
 if (-not (Test-Path (Join-Path $productRoot 'gateway\node_modules'))) {
   Write-Host '正在安装 AI 网关依赖…' -ForegroundColor Cyan
   Invoke-Npm @('install') (Join-Path $productRoot 'gateway')

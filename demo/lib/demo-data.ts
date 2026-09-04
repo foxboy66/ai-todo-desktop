@@ -9,6 +9,17 @@ export type Task = {
   doneDefinition: string;
 };
 
+export type AvailabilityBlock = {
+  id: string;
+  start: string;
+  end: string;
+};
+
+export const defaultAvailability: AvailabilityBlock[] = [
+  { id: 'slot-1', start: '09:00', end: '12:00' },
+  { id: 'slot-2', start: '14:00', end: '18:00' },
+];
+
 export const initialTasks: Task[] = [
   { id: 'task-1', title: '完成 MVP Demo 交互', duration: 90, priority: '高', doneDefinition: '核心流程可以从录入走到重排确认' },
   { id: 'task-2', title: '准备下午产品评审', duration: 60, priority: '高', doneDefinition: '评审材料结构清楚，可直接演示' },

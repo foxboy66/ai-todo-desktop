@@ -26,7 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { blockerReasons, initialTasks, type Task, type View } from '@/lib/demo-data';
+import { blockerReasons, defaultAvailability, initialTasks, type AvailabilityBlock, type Task, type View } from '@/lib/demo-data';
 import { buildSchedule, getReminderInterval } from '@/lib/demo-flow';
 
 const steps: Array<{ id: View; label: string; number: string }> = [
@@ -39,6 +39,8 @@ export default function Home() {
   const [view, setView] = useState<View>('execute');
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [taskInput, setTaskInput] = useState('完成 MVP Demo 交互；准备下午产品评审；回复客户邮件；整理用户访谈记录；阅读技术方案');
+  const [availability, setAvailability] = useState<AvailabilityBlock[]>(defaultAvailability);
+  const [timeOverrides, setTimeOverrides] = useState<Record<string, { start: string; end: string }>>({});
   const [progress, setProgress] = useState(50);
   const [isRunning, setIsRunning] = useState(true);
   const [completedIds, setCompletedIds] = useState<string[]>(['task-1']);
@@ -47,7 +49,10 @@ export default function Home() {
   const [blockerOpen, setBlockerOpen] = useState(false);
   const [blockerReason, setBlockerReason] = useState<string | null>(null);
 
-  const schedule = useMemo(() => buildSchedule(tasks), [tasks]);
+  const schedule = useMemo(() => buildSchedule(tasks, availability).map((task) => {
+    const override = timeOverrides[task.id];
+    return override ? { ...task, startLabel: override.start, endLabel: override.end } : task;
+  }), [tasks, availability, timeOverrides]);
   const currentTask = schedule.find((task) => task.id === currentTaskId) ?? schedule[1];
   const totalMinutes = tasks.reduce((sum, task) => sum + task.duration, 0);
   const reminderInterval = getReminderInterval(currentTask.duration);
@@ -118,6 +123,16 @@ export default function Home() {
     setTasks((items) => items.map((task) => task.id === id ? { ...task, duration: Math.max(15, task.duration + delta) } : task));
   }
 
+  function updateDuration(id: string, value: number) {
+    setTasks((items) => items.map((task) => task.id === id ? { ...task, duration: Math.max(15, Number.isFinite(value) ? value : 15) } : task));
+  }
+
+  function handleTimeChange(id: string, field: 'start' | 'end', value: string) {
+    const current = schedule.find((task) => task.id === id);
+    setTimeOverrides((items) => ({ ...items, [id]: { start: items[id]?.start ?? current?.startLabel ?? '09:00', end: items[id]?.end ?? current?.endLabel ?? '10:00', [field]: value } }));
+    setNotice('已修改任务时间，确认计划后才会正式应用');
+  }
+
   function completeCurrentTask() {
     const completed = completedIds.includes(currentTask.id) ? completedIds : [...completedIds, currentTask.id];
     setCompletedIds(completed);
@@ -177,7 +192,7 @@ export default function Home() {
               <CalendarDays className="size-4 text-[#54706d]" />
               <span className="text-sm font-medium">2026 年 9 月 4 日 · 星期五</span>
               <span className="h-4 w-px bg-[#d8e2df]" />
-              <span className="text-sm text-[#6c817f]">今日可用 6 小时 30 分</span>
+              <span className="text-sm text-[#6c817f]">可用：{availability.map((slot) => slot.start + '–' + slot.end).join('、')}</span>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="border-[#9bdac5] bg-[#e8fbf3] text-[#216854]"><Sparkles data-icon="inline-start" />模拟数据</Badge>
@@ -200,14 +215,18 @@ export default function Home() {
             )}
 
             {view === 'capture' && (
-              <CaptureView tasks={tasks} taskInput={taskInput} totalMinutes={totalMinutes} onInput={setTaskInput} onNext={() => show('review', 'AI 已整理 5 个任务，并生成了一份参考计划')} />
+              <CaptureView tasks={tasks} availability={availability} taskInput={taskInput} totalMinutes={totalMinutes} onInput={setTaskInput} onAvailabilityChange={setAvailability} onNext={() => show('review', 'AI 已整理 5 个任务，并生成了一份参考计划')} />
             )}
             {view === 'review' && (
               <ReviewView
                 schedule={schedule}
+                availability={availability}
                 totalMinutes={totalMinutes}
+                onAvailabilityChange={setAvailability}
                 onAdjust={adjustDuration}
-                onReset={() => { setTasks(initialTasks); setNotice('已恢复 AI 最初生成的参考计划'); }}
+                onDurationChange={updateDuration}
+                onTimeChange={handleTimeChange}
+                onReset={() => { setTasks(initialTasks); setAvailability(defaultAvailability); setTimeOverrides({}); setNotice('已恢复 AI 最初生成的参考计划'); }}
                 onStart={() => show('execute', '计划已确认，提醒将按照任务时长动态触发')}
               />
             )}

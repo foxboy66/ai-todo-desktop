@@ -48,3 +48,13 @@ test('marks work beyond the available day as unscheduled', () => {
   assert.equal(schedule.at(-1)?.scheduled, false);
   assert.equal(schedule.at(-1)?.startLabel, '未安排');
 });
+
+test('schedules tasks inside user-defined availability blocks', () => {
+  const schedule = buildSchedule(
+    [{ id: 'custom', title: '自定义任务', duration: 60, priority: '高', doneDefinition: '完成' }],
+    [{ id: 'custom-slot', start: '10:00', end: '11:30' }],
+  );
+
+  assert.equal(schedule[0].startLabel, '10:00');
+  assert.equal(schedule[0].endLabel, '11:00');
+});

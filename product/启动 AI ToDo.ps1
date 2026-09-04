@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $productRoot = $PSScriptRoot
 
 function Invoke-Npm([string[]]$Arguments, [string]$WorkingDirectory = $productRoot) {

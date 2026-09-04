@@ -11,5 +11,8 @@ describe('Windows launcher', () => {
     expect(launcher.toString('ascii')).toContain('product\\launch-ai-todo.ps1')
     expect(launcher.includes(Buffer.from([0x0d, 0x0a]))).toBe(true)
     expect(launcher.toString('ascii')).not.toMatch(/(^|[^\\r])\\n/)
+
+    const powershellScript = readFileSync(resolve(__dirname, '../启动 AI ToDo.ps1'))
+    expect([...powershellScript.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
   })
 })

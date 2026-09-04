@@ -1,0 +1,8 @@
+{
+  "name": "ai-todo-ai-gateway",
+  "private": true,
+  "type": "commonjs",
+  "scripts": { "dev": "tsx src/index.ts" },
+  "dependencies": { "@hono/node-server": "^1.19.0", "hono": "^4.9.7", "zod": "^4.1.8" },
+  "devDependencies": { "tsx": "^4.19.2" }
+}

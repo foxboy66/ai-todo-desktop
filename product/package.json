@@ -1,0 +1,45 @@
+{
+  "name": "ai-todo-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI 个性化 ToDo 本地优先桌面应用",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev:renderer": "vite --config vite.config.ts",
+    "build:main": "tsc -p tsconfig.json",
+    "build:renderer": "vite build --config vite.config.ts",
+    "build": "npm run build:main && npm run build:renderer",
+    "start": "electron .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "lint": "oxlint src gateway tests"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "better-sqlite3": "^12.4.1",
+    "hono": "^4.9.7",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12",
+    "oxlint": "^1.76.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5",
+    "vitest": "^3.2.4"
+  },
+  "build": {
+    "appId": "com.aitodo.desktop",
+    "productName": "AI ToDo",
+    "files": ["dist/**/*", "package.json"],
+    "win": { "target": "nsis" }
+  }
+}

@@ -12,7 +12,8 @@
     "start": "electron .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "lint": "oxlint src gateway tests"
+    "test:ui": "playwright test",
+    "lint": "oxlint src gateway tests e2e playwright.config.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",
@@ -24,6 +25,7 @@
     "zod": "^4.1.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
@@ -40,7 +42,12 @@
   "build": {
     "appId": "com.aitodo.desktop",
     "productName": "AI ToDo",
-    "files": ["dist/**/*", "package.json"],
-    "win": { "target": "nsis" }
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    }
   }
 }

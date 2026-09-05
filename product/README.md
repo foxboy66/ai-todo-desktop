@@ -33,3 +33,17 @@ npm test
 npm run lint
 npm run build
 ```
+
+## 清新豆芽主题与界面回归
+
+桌面端的录入、确认和执行页面采用浅绿与纸白配色，支持小窗口自动重排。输入框、按钮具有键盘焦点提示；阻碍弹窗支持 Tab 循环和 Escape 关闭。
+
+运行浏览器回归测试：
+
+```bash
+npm run test:ui
+```
+
+Windows 默认使用已安装的 Microsoft Edge。其他系统先运行 `npx playwright install chromium`；也可以通过 `PLAYWRIGHT_CHANNEL` 指定已安装的浏览器。
+
+测试自动构建正式渲染器，并在 1440、1080、390 像素宽度下检查任务录入、时段增删、任务编辑、确认、进度、完成、阻碍重排、空状态和失败重试。仅 Electron IPC 边界使用测试替身，排程与解析使用原有领域函数；不会读写实际用户数据库或调用付费 AI 接口。测试截图输出到 `test-results/`。

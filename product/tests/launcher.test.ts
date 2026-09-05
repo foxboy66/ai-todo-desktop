@@ -22,16 +22,7 @@ describe('Windows launcher', () => {
     expect(powershellText).toContain('Push-Location $productRoot')
     expect(powershellText).toContain('--dist-url=https://electronjs.org/headers')
 
-    const rendererStyles = readFileSync(resolve(__dirname, '../src/renderer/styles.css'), 'utf8')
-    expect(rendererStyles).toContain('grid-template-columns:195px minmax(0,1fr) 88px 150px;')
-    expect(rendererStyles).toContain('.time-cell input { width:84px; min-width:84px; }')
-    expect(rendererStyles).toContain('.priority-cell select { width:66px; height:34px;')
-    expect(rendererStyles).toContain('.task-actions input { width:58px; height:34px;')
-    const rendererApp = readFileSync(resolve(__dirname, '../src/renderer/App.tsx'), 'utf8')
-    expect(rendererApp).toContain('添加计划')
-    expect(rendererApp).toContain('完成标准')
-    expect(rendererApp).toContain('<span>优先级</span>')
-    expect(rendererApp).toContain('manual-time')
+    // Renderer controls and layout are exercised in e2e/frontend.spec.ts.
     const viteConfig = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf8')
     expect(viteConfig).toContain("base: './'")
 

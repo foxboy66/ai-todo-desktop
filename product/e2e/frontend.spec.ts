@@ -163,6 +163,12 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
 }, info) => {
   const { calls, errors } = await boot(page);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("把今天，安排得刚刚好。");
+  const companion = page.getByRole("img", { name: "陪伴你的小猫" });
+  if (info.project.name === "mobile") {
+    await expect(companion).toBeHidden();
+  } else {
+    await expect(companion).toBeVisible();
+  }
   await capture(page, info, "capture");
   await page.getByRole("button", { name: "添加时段" }).click();
   await expect(page.getByLabel("时段 3 开始时间")).toHaveValue("19:00");

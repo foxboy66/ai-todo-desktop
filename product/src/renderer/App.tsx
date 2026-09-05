@@ -60,19 +60,29 @@ function todayLabel() {
   }).format(new Date());
 }
 
-function SproutFriend() {
+function CatFriend() {
   return (
-    <div className="sprout-friend" aria-hidden="true">
-      <span className="sprout-leaf left" />
-      <span className="sprout-leaf right" />
-      <span className="sprout-stem" />
-      <div className="sprout-face">
-        <i />
-        <i />
-        <b />
-      </div>
-      <span className="sprout-shadow" />
-    </div>
+    <svg className="cat-friend" viewBox="0 0 148 140" role="img" aria-label="陪伴你的小猫">
+      <ellipse cx="75" cy="129" rx="47" ry="6" fill="#dce6d0" />
+      <path d="M103 116c28 3 32-23 18-29" fill="none" stroke="#b7c89e" strokeWidth="13" strokeLinecap="round" />
+      <path d="M103 116c28 3 32-23 18-29" fill="none" stroke="#f3edda" strokeWidth="10" strokeLinecap="round" />
+      <path d="M48 77c-7 13-10 30-7 42 7 13 58 13 65 0 3-14-2-31-10-42Z" fill="#f3edda" stroke="#b7c89e" strokeWidth="1.5" />
+      <ellipse cx="74" cy="105" rx="18" ry="20" fill="#fffaf0" />
+      <path d="M35 52 34 22q0-7 6-3l22 15q12-4 24 0l22-15q6-4 6 3l-1 30c7 9 9 22 3 31-12 18-71 18-84 0-6-9-4-22 3-31Z" fill="#f7f1e1" stroke="#b7c89e" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="m41 29 1 18 14-8Z" fill="#edcbb8" />
+      <path d="m107 29-1 18-14-8Z" fill="#edcbb8" />
+      <path d="m68 36 2 8m9-8-2 8" stroke="#d7c7a6" strokeWidth="3" strokeLinecap="round" />
+      <ellipse cx="57" cy="62" rx="3" ry="4" fill="#496240" />
+      <ellipse cx="91" cy="62" rx="3" ry="4" fill="#496240" />
+      <ellipse cx="45" cy="73" rx="7" ry="4" fill="#edcbb8" />
+      <ellipse cx="103" cy="73" rx="7" ry="4" fill="#edcbb8" />
+      <path d="M70 70q4-3 8 0l-4 4Z" fill="#ba927c" />
+      <path d="M74 74c-1 6-7 6-9 2m9-2c1 6 7 6 9 2" fill="none" stroke="#687b58" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="m28 65 13 3m-14 8 13-1m80-10-13 3m14 8-13-1" stroke="#9cae8b" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M48 89q26 11 52 0L77 107Z" fill="#9fbe80" />
+      <path d="m70 96 7 3" stroke="#eaf3e2" strokeWidth="2" strokeLinecap="round" />
+      <path d="M50 112v9q8 8 16 0v-8m17 0v8q8 8 16 0v-9" fill="#f7f1e1" stroke="#b7c89e" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -387,7 +397,7 @@ export function App() {
           ))}
         </nav>
         <div className="sidebar-garden">
-          <SproutFriend />
+          <CatFriend />
           <strong>一点点，也在向前。</strong>
           <p>留一点空白，给生活和自己。</p>
         </div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, BellRing, CalendarClock, Check, ChevronRight, CircleDot, Clock3, Pause, Play, Plus, RotateCcw, Settings2, Sparkles, Trash2, X } from 'lucide-react';
 import { buildSchedule, defaultAvailability, formatTime, getCheckpoints, getReminderInterval, parseTime, starterTasks, type AvailabilityBlock, type Priority, type ScheduledTask, type Task } from '@/shared/domain';
-import { shouldShowBlockerPrompt } from './blocker';
+import { normalizeBlockerReason, shouldShowBlockerPrompt } from './blocker';
 
 type View = 'capture' | 'review' | 'execute';
 const reasons = ['耗时比预期更长', '临时事项打断', '任务内容不清楚', '缺少资料或条件', '精力不足', '优先级发生变化'];
@@ -24,6 +24,7 @@ export function App() {
   const [running, setRunning] = useState(false);
   const [blocker, setBlocker] = useState<{ reason?: string; suggestion?: { tasks: Task[]; schedule: ScheduledTask[] } }>({});
   const [blockerOpen, setBlockerOpen] = useState(false);
+  const [customReason, setCustomReason] = useState('');
 
   useEffect(() => {
     void window.aiTodo.load().then((state) => {
@@ -105,9 +106,10 @@ export function App() {
   }
 
   async function chooseReason(reason: string) {
-    if (!currentTask) return;
-    const suggestion = await window.aiTodo.suggestReplan({ tasks, availability, currentTaskId: currentTask.id, reason });
-    setBlocker({ reason, suggestion });
+    const normalizedReason = normalizeBlockerReason(reason);
+    if (!currentTask || !normalizedReason) return;
+    const suggestion = await window.aiTodo.suggestReplan({ tasks, availability, currentTaskId: currentTask.id, reason: normalizedReason });
+    setBlocker({ reason: normalizedReason, suggestion });
   }
 
   async function applyReplan() {
@@ -117,6 +119,7 @@ export function App() {
 
     setBlocker({});
     setBlockerOpen(false);
+    setCustomReason('');
     setNotice('已生成新的重排草稿，确认后才会更新提醒和今日时间线。');
     setView('review');
   }
@@ -145,12 +148,12 @@ export function App() {
         <div className="notice" aria-live="polite"><BellRing size={16} /><span>{notice}</span><button onClick={() => setNotice('')}><X size={15} /></button></div>
         {view === 'capture' && <Capture tasks={tasks} availability={availability} taskInput={taskInput} plannedMinutes={plannedMinutes} loading={loading} onInput={setTaskInput} onGenerate={() => void generatePlan()} onAddAvailability={addAvailability} onUpdateAvailability={updateAvailability} onRemoveAvailability={(id) => setAvailability((items) => items.filter((item) => item.id !== id))} />}
         {view === 'review' && <Review tasks={tasks} schedule={schedule} version={version} onUpdateTask={updateTask} onUpdateTime={updateTime} onRemoveTask={(id) => { setTasks((items) => items.filter((task) => task.id !== id)); setSchedule((items) => items.filter((task) => task.id !== id)); }} onConfirm={() => void confirmPlan()} onBack={() => setStep('capture')} />}
-        {view === 'execute' && currentTask && <Execute schedule={schedule} currentTask={currentTask} progress={currentProgress} running={running} reminderInterval={reminderInterval} onSelect={setCurrentTaskId} onProgress={updateProgress} onComplete={completeTask} onToggle={() => setRunning((value) => !value)} onBlocker={() => { setBlocker({}); setBlockerOpen(true); }} onReview={() => setStep('review')} />}
+        {view === 'execute' && currentTask && <Execute schedule={schedule} currentTask={currentTask} progress={currentProgress} running={running} reminderInterval={reminderInterval} onSelect={setCurrentTaskId} onProgress={updateProgress} onComplete={completeTask} onToggle={() => setRunning((value) => !value)} onBlocker={() => { setBlocker({}); setCustomReason(''); setBlockerOpen(true); }} onReview={() => setStep('review')} />}
       </div>
     </main>
 
-    {shouldShowBlockerPrompt(view, blockerOpen, blocker.reason) && <div className="modal-backdrop"><div className="modal"><div className="modal-icon"><AlertCircle size={20} /></div><h2>现在遇到了什么情况？</h2><p>先了解原因，再决定是否需要调整剩余计划。</p><div className="reason-grid">{reasons.map((reason) => <button key={reason} onClick={() => void chooseReason(reason)}>{reason}<ChevronRight size={16} /></button>)}</div><button className="modal-close" onClick={() => { setBlocker({}); setBlockerOpen(false); }}>暂时不调整</button></div></div>}
-    {blockerOpen && blocker.reason && blocker.suggestion && <div className="modal-backdrop"><div className="modal"><div className="modal-icon success"><Sparkles size={20} /></div><h2>这是建议的新安排</h2><p>原因已记录，系统不会直接修改当前计划。</p><div className="reason-chip">已记录：{blocker.reason}</div><div className="impact-list">{blocker.suggestion.schedule.filter((task) => task.scheduled).slice(0, 4).map((task) => <div key={task.id}><span>{task.title}</span><strong>{task.startLabel}–{task.endLabel}</strong></div>)}</div><div className="modal-actions"><button className="secondary" onClick={() => { setBlocker({}); setBlockerOpen(false); }}>返回</button><button className="primary" onClick={() => void applyReplan()}>生成重排草稿<ChevronRight size={16} /></button></div></div></div>}
+    {shouldShowBlockerPrompt(view, blockerOpen, blocker.reason) && <div className="modal-backdrop"><div className="modal"><div className="modal-icon"><AlertCircle size={20} /></div><h2>现在遇到了什么情况？</h2><p>先了解原因，再决定是否需要调整剩余计划。</p><div className="reason-grid">{reasons.map((reason) => <button key={reason} onClick={() => void chooseReason(reason)}>{reason}<ChevronRight size={16} /></button>)}</div><div className="custom-reason"><input value={customReason} onChange={(event) => setCustomReason(event.target.value)} placeholder="输入其他原因" aria-label="自定义阻碍原因" /><button className="secondary" disabled={!normalizeBlockerReason(customReason)} onClick={() => void chooseReason(customReason)}>使用此原因</button></div><button className="modal-close" onClick={() => { setBlocker({}); setCustomReason(''); setBlockerOpen(false); }}>暂时不调整</button></div></div>}
+    {blockerOpen && blocker.reason && blocker.suggestion && <div className="modal-backdrop"><div className="modal"><div className="modal-icon success"><Sparkles size={20} /></div><h2>这是建议的新安排</h2><p>原因已记录，系统不会直接修改当前计划。</p><div className="reason-chip">已记录：{blocker.reason}</div><div className="impact-list">{blocker.suggestion.schedule.filter((task) => task.scheduled).slice(0, 4).map((task) => <div key={task.id}><span>{task.title}</span><strong>{task.startLabel}–{task.endLabel}</strong></div>)}</div><div className="modal-actions"><button className="secondary" onClick={() => { setBlocker({}); setCustomReason(''); setBlockerOpen(true); }}>返回</button><button className="primary" onClick={() => void applyReplan()}>生成重排草稿<ChevronRight size={16} /></button></div></div></div>}
   </div>;
 }
 

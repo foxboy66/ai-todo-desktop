@@ -983,6 +983,7 @@ function Execute({
     }, 1000);
     return () => window.clearInterval(timer);
   }, [running, currentTask.id, countdownSeconds <= 0]);
+  const countdownProgress = initialCountdownSeconds > 0 ? countdownSeconds / initialCountdownSeconds : 0;
   return (
     <section>
       <div className="heading-row">
@@ -1065,22 +1066,32 @@ function Execute({
                   <small>已同步进度</small>
                 </div>
               </div>
-              <div className="progress-copy">
-                <div className="remaining countdown-panel" aria-live="polite">
-                  <span>任务倒计时</span>
+              <div
+                className="countdown-ring"
+                role="timer"
+                aria-label="任务倒计时"
+                aria-live="polite"
+                style={{
+                  background: `conic-gradient(var(--green) ${countdownProgress * 360}deg, #d5e3cb 0deg)`,
+                }}
+              >
+                <div>
                   <strong>{countdownLabel(countdownSeconds)}</strong>
+                  <small>任务倒计时</small>
                 </div>
-                <div className="progress-track">
-                  <i style={{ width: `${progress}%` }} />
-                </div>
-                <div className="reminder-card">
-                  <BellRing size={16} />
-                  <div>
-                    <strong>
-                      {reminderInterval ? `每 ${reminderInterval} 分钟同步一次` : "不设置中途提醒"}
-                    </strong>
-                    <small>你可以在任何时候手动同步状态。</small>
-                  </div>
+              </div>
+            </div>
+            <div className="progress-copy">
+              <div className="progress-track">
+                <i style={{ width: `${progress}%` }} />
+              </div>
+              <div className="reminder-card">
+                <BellRing size={16} />
+                <div>
+                  <strong>
+                    {reminderInterval ? `每 ${reminderInterval} 分钟同步一次` : "不设置中途提醒"}
+                  </strong>
+                  <small>你可以在任何时候手动同步状态。</small>
                 </div>
               </div>
             </div>

@@ -26,6 +26,8 @@ describe('Windows launcher', () => {
     const rendererApp = readFileSync(resolve(__dirname, '../src/renderer/App.tsx'), 'utf8')
     expect(rendererApp).toContain('任务倒计时')
     expect(rendererApp).toContain('countdownSeconds')
+    expect(rendererApp).toContain('countdown-ring')
+    expect(rendererApp).toContain('已同步进度')
     const viteConfig = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf8')
     expect(viteConfig).toContain("base: './'")
 

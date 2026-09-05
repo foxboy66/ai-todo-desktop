@@ -1036,19 +1036,22 @@ textarea {
 }
 .progress-area {
   display: grid;
-  grid-template-columns: 145px minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
   gap: 24px;
   margin-top: 32px;
 }
-.progress-ring {
+.progress-ring,
+.countdown-ring {
   display: grid;
   width: 140px;
   height: 140px;
   place-items: center;
   border-radius: 50%;
+  justify-self: center;
 }
-.progress-ring > div {
+.progress-ring > div,
+.countdown-ring > div {
   display: grid;
   width: 120px;
   height: 120px;
@@ -1058,16 +1061,21 @@ textarea {
   background: #eaf3e2;
   text-align: center;
 }
-.progress-ring strong {
+.progress-ring strong,
+.countdown-ring strong {
   color: var(--green-hover);
   font-size: 34px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
-.progress-ring small {
+.progress-ring small,
+.countdown-ring small {
   margin-top: 6px;
   color: var(--muted);
   font-size: 10px;
+}
+.progress-copy {
+  margin-top: 26px;
 }
 .remaining {
   display: flex;
@@ -1082,6 +1090,10 @@ textarea {
   color: var(--ink);
   font-size: 12px;
   font-weight: 600;
+}
+.countdown-ring strong {
+  font-size: 20px;
+  letter-spacing: .03em;
 }
 .countdown-panel strong {
   font-size: 28px;
@@ -1655,19 +1667,24 @@ textarea {
     font-size: 23px;
   }
   .progress-area {
-    grid-template-columns: 120px minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
   }
-  .progress-ring {
+  .progress-ring,
+  .countdown-ring {
     width: 118px;
     height: 118px;
   }
-  .progress-ring > div {
+  .progress-ring > div,
+  .countdown-ring > div {
     width: 100px;
     height: 100px;
   }
   .progress-ring strong {
     font-size: 29px;
+  }
+  .countdown-ring strong {
+    font-size: 15px;
   }
   .reminder-card {
     padding: 9px;

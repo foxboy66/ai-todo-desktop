@@ -23,6 +23,9 @@ describe('Windows launcher', () => {
     expect(powershellText).toContain('--dist-url=https://electronjs.org/headers')
 
     // Renderer controls and layout are exercised in e2e/frontend.spec.ts.
+    const rendererApp = readFileSync(resolve(__dirname, '../src/renderer/App.tsx'), 'utf8')
+    expect(rendererApp).toContain('任务倒计时')
+    expect(rendererApp).toContain('countdownSeconds')
     const viteConfig = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf8')
     expect(viteConfig).toContain("base: './'")
 

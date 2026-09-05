@@ -52,6 +52,13 @@ function totalMinutes(tasks: Task[]) {
 function minutesLabel(value: number) {
   return `${Math.floor(value / 60)} 小时 ${value % 60} 分`;
 }
+function countdownLabel(seconds: number) {
+  const safe = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const remainingSeconds = safe % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+}
 function todayLabel() {
   return new Intl.DateTimeFormat("zh-CN", {
     month: "long",
@@ -964,7 +971,18 @@ function Execute({
   const upcoming = schedule
     .filter((task) => task.id !== currentTask.id && task.scheduled && task.status !== "已完成")
     .slice(0, 3);
-  const remaining = Math.max(0, Math.round(currentTask.duration * (1 - progress / 100)));
+  const initialCountdownSeconds = Math.max(0, Math.round(currentTask.duration * 60 * (1 - progress / 100)));
+  const [countdownSeconds, setCountdownSeconds] = useState(initialCountdownSeconds);
+  useEffect(() => {
+    setCountdownSeconds(initialCountdownSeconds);
+  }, [currentTask.id, currentTask.duration, progress, initialCountdownSeconds]);
+  useEffect(() => {
+    if (!running || countdownSeconds <= 0) return undefined;
+    const timer = window.setInterval(() => {
+      setCountdownSeconds((value) => Math.max(0, value - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [running, currentTask.id, countdownSeconds <= 0]);
   return (
     <section>
       <div className="heading-row">
@@ -1048,9 +1066,9 @@ function Execute({
                 </div>
               </div>
               <div className="progress-copy">
-                <div className="remaining">
-                  <span>预计剩余</span>
-                  <strong>{minutesLabel(remaining)}</strong>
+                <div className="remaining countdown-panel" aria-live="polite">
+                  <span>任务倒计时</span>
+                  <strong>{countdownLabel(countdownSeconds)}</strong>
                 </div>
                 <div className="progress-track">
                   <i style={{ width: `${progress}%` }} />

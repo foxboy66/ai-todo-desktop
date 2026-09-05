@@ -19,6 +19,13 @@ export type AvailabilityBlock = {
   kind?: 'available' | 'busy';
 };
 
+export type ScheduleSegment = {
+  startMinutes: number;
+  endMinutes: number;
+  startLabel: string;
+  endLabel: string;
+};
+
 export type ScheduledTask = Task & {
   scheduled: boolean;
   startMinutes: number | null;
@@ -26,6 +33,7 @@ export type ScheduledTask = Task & {
   startLabel: string;
   endLabel: string;
   checkpoints: string[];
+  segments: ScheduleSegment[];
 };
 
 export type ReminderNode = {
@@ -75,6 +83,43 @@ export function getCurrentMinutes(now = new Date()) {
   return now.getHours() * 60 + now.getMinutes();
 }
 
+export function getScheduleSegments(task: Pick<ScheduledTask, 'scheduled' | 'startMinutes' | 'endMinutes' | 'segments'>): ScheduleSegment[] {
+  if (task.segments?.length) return task.segments;
+  if (task.scheduled && task.startMinutes !== null && task.endMinutes !== null) {
+    return [{
+      startMinutes: task.startMinutes,
+      endMinutes: task.endMinutes,
+      startLabel: formatTime(task.startMinutes),
+      endLabel: formatTime(task.endMinutes),
+    }];
+  }
+  return [];
+}
+
+export function formatScheduleLabel(task: Pick<ScheduledTask, 'scheduled' | 'startMinutes' | 'endMinutes' | 'segments'>) {
+  const segments = getScheduleSegments(task);
+  return segments.length ? segments.map((segment) => `${segment.startLabel}–${segment.endLabel}`).join(' / ') : '未安排';
+}
+
+function getSegmentCheckpoints(segments: ScheduleSegment[], duration: number) {
+  const interval = getReminderInterval(duration);
+  if (!interval) return [];
+  const checkpoints: string[] = [];
+  let completedMinutes = 0;
+  let nextCheckpoint = interval;
+  for (const segment of segments) {
+    const segmentDuration = segment.endMinutes - segment.startMinutes;
+    const segmentProgressEnd = completedMinutes + segmentDuration;
+    while (nextCheckpoint < segmentProgressEnd && nextCheckpoint < duration) {
+      checkpoints.push(formatTime(segment.startMinutes + nextCheckpoint - completedMinutes));
+      nextCheckpoint += interval;
+    }
+    completedMinutes = segmentProgressEnd;
+    if (completedMinutes >= duration) break;
+  }
+  return checkpoints;
+}
+
 export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[], nowMinutes = getCurrentMinutes()) {
   const blocks = availability
     .filter((block) => block.kind !== 'busy')
@@ -84,30 +129,43 @@ export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[], 
   const buffer = 15;
   let blockIndex = 0;
   let cursor = Math.max(blocks[0]?.startMinutes ?? 0, nowMinutes);
+  const placements = new Map<string, ScheduleSegment[]>();
 
-  const placements = new Map<string, { startMinutes: number; endMinutes: number }>();
-  const pendingTasks = [...tasks];
-  while (pendingTasks.length > 0 && blockIndex < blocks.length) {
-    const block = blocks[blockIndex];
-    cursor = Math.max(cursor, block.startMinutes);
-    const taskIndex = pendingTasks.findIndex((task) => cursor + task.duration <= block.endMinutes);
-    if (taskIndex < 0) {
-      blockIndex += 1;
-      cursor = Math.max(blocks[blockIndex]?.startMinutes ?? 0, nowMinutes);
-      continue;
+  for (const task of tasks) {
+    let remainingMinutes = task.duration;
+    const segments: ScheduleSegment[] = [];
+    while (remainingMinutes > 0 && blockIndex < blocks.length) {
+      const block = blocks[blockIndex];
+      cursor = Math.max(cursor, block.startMinutes);
+      const availableMinutes = block.endMinutes - cursor;
+      if (availableMinutes <= 0) {
+        blockIndex += 1;
+        cursor = Math.max(blocks[blockIndex]?.startMinutes ?? 0, nowMinutes);
+        continue;
+      }
+      const segmentMinutes = Math.min(remainingMinutes, availableMinutes);
+      const startMinutes = cursor;
+      const endMinutes = cursor + segmentMinutes;
+      segments.push({ startMinutes, endMinutes, startLabel: formatTime(startMinutes), endLabel: formatTime(endMinutes) });
+      remainingMinutes -= segmentMinutes;
+      cursor = endMinutes;
+      if (remainingMinutes > 0) {
+        blockIndex += 1;
+        cursor = Math.max(blocks[blockIndex]?.startMinutes ?? 0, nowMinutes);
+      }
     }
-    const task = pendingTasks.splice(taskIndex, 1)[0];
-    const startMinutes = cursor;
-    const endMinutes = cursor + task.duration;
-    placements.set(task.id, { startMinutes, endMinutes });
-    cursor = endMinutes + buffer;
+    if (segments.length) placements.set(task.id, segments);
+    if (remainingMinutes === 0) cursor += buffer;
+    if (blockIndex >= blocks.length) break;
   }
 
   return tasks.map((task): ScheduledTask => {
-    const placement = placements.get(task.id);
-    const scheduled = Boolean(placement);
-    const startMinutes = placement?.startMinutes ?? null;
-    const endMinutes = placement?.endMinutes ?? null;
+    const segments = placements.get(task.id) ?? [];
+    const scheduled = segments.length > 0 && segments.reduce((total, segment) => total + segment.endMinutes - segment.startMinutes, 0) >= task.duration;
+    const firstSegment = segments[0];
+    const lastSegment = segments[segments.length - 1];
+    const startMinutes = firstSegment?.startMinutes ?? null;
+    const endMinutes = lastSegment?.endMinutes ?? null;
     return {
       ...task,
       scheduled,
@@ -115,12 +173,12 @@ export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[], 
       endMinutes,
       startLabel: scheduled && startMinutes !== null ? formatTime(startMinutes) : '未安排',
       endLabel: scheduled && endMinutes !== null ? formatTime(endMinutes) : '',
-      checkpoints: scheduled && startMinutes !== null ? getCheckpoints(startMinutes, task.duration) : [],
+      checkpoints: scheduled ? getSegmentCheckpoints(segments, task.duration) : [],
+      segments,
       status: scheduled && task.status === '待安排' ? '已安排' : task.status,
     };
   });
 }
-
 function estimateDuration(title: string) {
   if (/邮件|消息|回复/.test(title)) return 30;
   if (/会议|评审|沟通/.test(title)) return 60;

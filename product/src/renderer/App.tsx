@@ -25,7 +25,7 @@ import {
   getCheckpoints,
   getReminderInterval,
   getScheduleSegments,
-  isTaskAvailableAt,
+  isAvailabilityOpenAt,
   parseTime,
   starterTasks,
   type AvailabilityBlock,
@@ -184,7 +184,7 @@ export function App() {
     if (!activeTaskId) return undefined;
     const tick = () => {
       const activeTask = schedule.find((task) => task.id === activeTaskId);
-      if (!activeTask || activeTask.status === "已完成" || !isTaskAvailableAt(activeTask, new Date())) return;
+      if (!activeTask || activeTask.status === "已完成" || !isAvailabilityOpenAt(availability, new Date())) return;
       setElapsedSecondsByTask((items) => {
         const totalSeconds = Math.max(0, Math.round(activeTask.duration * 60));
         const previousSeconds = items[activeTask.id] ?? 0;
@@ -196,7 +196,7 @@ export function App() {
     tick();
     const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
-  }, [activeTaskId, schedule]);
+  }, [activeTaskId, availability, schedule]);
 
   const currentTask =
     schedule.find((task) => task.id === currentTaskId) ??

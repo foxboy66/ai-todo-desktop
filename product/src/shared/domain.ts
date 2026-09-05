@@ -102,6 +102,16 @@ export function isTaskAvailableAt(task: Pick<ScheduledTask, 'scheduled' | 'start
   return getScheduleSegments(task).some((segment) => nowMinutes >= segment.startMinutes && nowMinutes < segment.endMinutes);
 }
 
+export function isAvailabilityOpenAt(availability: AvailabilityBlock[], now = new Date()) {
+  const nowMinutes = getCurrentMinutes(now) + now.getSeconds() / 60;
+  return availability.some((block) => {
+    if (block.kind === 'busy') return false;
+    const startMinutes = parseTime(block.start);
+    const endMinutes = parseTime(block.end);
+    return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+  });
+}
+
 export function formatScheduleLabel(task: Pick<ScheduledTask, 'scheduled' | 'startMinutes' | 'endMinutes' | 'segments'>) {
   const segments = getScheduleSegments(task);
   return segments.length ? segments.map((segment) => `${segment.startLabel}–${segment.endLabel}`).join(' / ') : '未安排';

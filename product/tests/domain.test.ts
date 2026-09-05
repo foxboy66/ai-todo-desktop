@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildReminderNodes, buildSchedule, createDraftTask, formatScheduleLabel, getCheckpoints, getReminderInterval, isTaskAvailableAt, parseTaskInput } from '../src/shared/domain';
+import { buildReminderNodes, buildSchedule, createDraftTask, formatScheduleLabel, getCheckpoints, getReminderInterval, isAvailabilityOpenAt, isTaskAvailableAt, parseTaskInput } from '../src/shared/domain';
 
 describe('AI ToDo 领域规则', () => {
   it('创建可编辑的新计划草稿', () => {
@@ -51,6 +51,13 @@ describe('AI ToDo 领域规则', () => {
     expect(isTaskAvailableAt(scheduled, new Date(2026, 0, 1, 11, 30, 0))).toBe(true);
     expect(isTaskAvailableAt(scheduled, new Date(2026, 0, 1, 12, 30, 0))).toBe(false);
     expect(isTaskAvailableAt(scheduled, new Date(2026, 0, 1, 14, 0, 0))).toBe(true);
+    const availability = [
+      { id: 'morning', start: '09:00', end: '12:00', kind: 'available' as const },
+      { id: 'afternoon', start: '14:00', end: '18:00', kind: 'available' as const },
+    ];
+    expect(isAvailabilityOpenAt(availability, new Date(2026, 0, 1, 11, 30, 0))).toBe(true);
+    expect(isAvailabilityOpenAt(availability, new Date(2026, 0, 1, 12, 30, 0))).toBe(false);
+    expect(isAvailabilityOpenAt(availability, new Date(2026, 0, 1, 14, 0, 0))).toBe(true);
     expect(scheduled.checkpoints).toEqual(['11:30', '14:00']);
     const reminders = buildReminderNodes(schedule, new Date(2026, 0, 1));
     expect(reminders.map((reminder) => reminder.dueAt)).toEqual([

@@ -25,6 +25,8 @@ describe('Windows launcher', () => {
     const rendererStyles = readFileSync(resolve(__dirname, '../src/renderer/styles.css'), 'utf8')
     expect(rendererStyles).toContain('grid-template-columns:195px minmax(0,1fr) 150px;')
     expect(rendererStyles).toContain('.time-cell input { width:84px; min-width:84px; }')
+    expect(rendererStyles).toContain('.task-main select { position:absolute; top:50%; right:0; width:43px; height:34px;')
+    expect(rendererStyles).toContain('.task-actions input { width:58px; height:34px;')
     const viteConfig = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf8')
     expect(viteConfig).toContain("base: './'")
 

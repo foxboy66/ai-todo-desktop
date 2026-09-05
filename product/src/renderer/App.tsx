@@ -953,11 +953,11 @@ function Execute({
   const upcoming = schedule
     .filter((task) => task.id !== currentTask.id && task.scheduled && task.status !== "已完成")
     .slice(0, 3);
-  const initialCountdownSeconds = Math.max(0, Math.round(currentTask.duration * 60 * (1 - progress / 100)));
+  const initialCountdownSeconds = Math.max(0, Math.round(currentTask.duration * 60));
   const [countdownSeconds, setCountdownSeconds] = useState(initialCountdownSeconds);
   useEffect(() => {
     setCountdownSeconds(initialCountdownSeconds);
-  }, [currentTask.id, currentTask.duration, progress, initialCountdownSeconds]);
+  }, [currentTask.id, currentTask.duration, initialCountdownSeconds]);
   useEffect(() => {
     if (!running || countdownSeconds <= 0) return undefined;
     const timer = window.setInterval(() => {

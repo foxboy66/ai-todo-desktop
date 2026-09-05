@@ -28,6 +28,8 @@ describe('Windows launcher', () => {
     expect(rendererApp).toContain('countdownSeconds')
     expect(rendererApp).toContain('countdown-ring')
     expect(rendererApp).toContain('已同步进度')
+    expect(rendererApp).toContain('Math.round(currentTask.duration * 60)')
+    expect(rendererApp).not.toContain('currentTask.duration * 60 * (1 - progress / 100)')
     const viteConfig = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf8')
     expect(viteConfig).toContain("base: './'")
 

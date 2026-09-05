@@ -21,11 +21,12 @@ import {
   createDraftTask,
   defaultAvailability,
   formatScheduleLabel,
-  formatTime,
-  getCheckpoints,
+  getCurrentScheduledTask,
   getReminderInterval,
+  getScheduleOverflowTasks,
   getScheduleSegments,
-  isAvailabilityOpenAt,
+  getSecondsUntilTaskEnd,
+  reflowScheduleFromTask,
   parseTime,
   starterTasks,
   type AvailabilityBlock,
@@ -142,7 +143,8 @@ export function App() {
   const [version, setVersion] = useState(0);
   const [currentTaskId, setCurrentTaskId] = useState(starterTasks[0].id);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [elapsedSecondsByTask, setElapsedSecondsByTask] = useState<Record<string, number>>({});
+  const [now, setNow] = useState(() => new Date());
+  const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [blocker, setBlocker] = useState<{
     reason?: string;
@@ -179,22 +181,24 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!activeTaskId) return undefined;
-    const tick = () => {
-      const activeTask = schedule.find((task) => task.id === activeTaskId);
-      if (!activeTask || activeTask.status === "已完成" || !isAvailabilityOpenAt(availability, new Date())) return;
-      setElapsedSecondsByTask((items) => {
-        const totalSeconds = Math.max(0, Math.round(activeTask.duration * 60));
-        const previousSeconds = items[activeTask.id] ?? 0;
-        const elapsedSeconds = Math.min(totalSeconds, previousSeconds + 1);
-        if (elapsedSeconds === previousSeconds) return items;
-        return { ...items, [activeTask.id]: elapsedSeconds };
-      });
-    };
-    tick();
-    const timer = window.setInterval(tick, 1000);
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
-  }, [activeTaskId, availability, schedule]);
+  }, []);
+
+  useEffect(() => {
+    if (view !== "execute") return;
+    const nextTask = getCurrentScheduledTask(schedule, now);
+    const selectedTask = schedule.find((task) => task.id === currentTaskId);
+    const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+    if (
+      nextTask &&
+      (!selectedTask ||
+        (selectedTask.endMinutes !== null && selectedTask.endMinutes <= nowMinutes && nextTask.id !== selectedTask.id))
+    ) {
+      setCurrentTaskId(nextTask.id);
+      setActiveTaskId(nextTask.id);
+    }
+  }, [currentTaskId, now, schedule, view]);
 
   const currentTask =
     schedule.find((task) => task.id === currentTaskId) ??
@@ -207,9 +211,7 @@ export function App() {
   const countdownSeconds = currentTask
     ? currentTask.status === "已完成"
       ? 0
-      : activeTaskId === currentTask.id
-        ? Math.max(0, countdownTotalSeconds - (elapsedSecondsByTask[currentTask.id] ?? 0))
-        : countdownTotalSeconds
+      : getSecondsUntilTaskEnd(currentTask, now)
     : 0;
 
   function setStep(next: View) {
@@ -231,7 +233,6 @@ export function App() {
       setSchedule(result.schedule);
       setCurrentTaskId(result.tasks[0]?.id ?? "");
       setActiveTaskId(null);
-      setElapsedSecondsByTask({});
       setView("review");
       setNotice(`AI 已整理 ${result.tasks.length} 个任务，并生成参考计划。`);
     } catch {
@@ -248,10 +249,10 @@ export function App() {
     };
     setSchedule(result.schedule);
     setVersion(result.version);
-    const firstTask = result.schedule.find((task) => task.scheduled && task.status !== "已完成");
+    const firstTask = getCurrentScheduledTask(result.schedule, now);
     setCurrentTaskId(firstTask?.id ?? "");
     setActiveTaskId(firstTask?.id ?? null);
-    setElapsedSecondsByTask({});
+    setIsRunning(false);
     setView("execute");
     setNotice(`计划 v${result.version} 已确认，提醒节点已保存。`);
   }
@@ -275,10 +276,6 @@ export function App() {
   function updateTime(id: string, field: "start" | "end", value: string) {
     const current = schedule.find((task) => task.id === id);
     if (!current || !value) return;
-    if (getScheduleSegments(current).length > 1) {
-      setNotice("跨可用时段任务请通过修改耗时或可用时段后重新生成计划。");
-      return;
-    }
     const typedMinutes = parseTime(value);
     const startMinutes =
       field === "start"
@@ -291,33 +288,17 @@ export function App() {
       return;
     }
     const duration = field === "end" ? Math.max(15, endMinutes - startMinutes) : current.duration;
-    const segment = {
-      startMinutes,
-      endMinutes: startMinutes + duration,
-      startLabel: formatTime(startMinutes),
-      endLabel: formatTime(startMinutes + duration),
-    };
-    if (field === "end")
+    const nextSchedule = reflowScheduleFromTask(schedule, id, startMinutes, duration);
+    if (field === "end") {
       setTasks((items) => items.map((task) => (task.id === id ? { ...task, duration } : task)));
-    setSchedule((items) =>
-      items.map((task) =>
-        task.id === id
-          ? {
-              ...task,
-              duration,
-              scheduled: true,
-              startMinutes,
-              endMinutes: startMinutes + duration,
-              startLabel: formatTime(startMinutes),
-              endLabel: formatTime(startMinutes + duration),
-              checkpoints: getCheckpoints(startMinutes, duration),
-              segments: [segment],
-              status: task.status === "待安排" ? "已安排" : task.status,
-            }
-          : task,
-      ),
+    }
+    setSchedule(nextSchedule);
+    const overflowTasks = getScheduleOverflowTasks(nextSchedule, availability);
+    setNotice(
+      overflowTasks.length
+        ? "已修改任务时间，后续 " + overflowTasks.length + " 项已按耗时继续安排，但结束时间超出今日可用时段。"
+        : "已修改任务时间，后续任务已顺延，确认计划后才会正式应用。",
     );
-    setNotice("已修改任务时间，确认计划后才会正式应用。");
   }
   function addAvailability() {
     setAvailability((items) => [
@@ -398,7 +379,6 @@ export function App() {
     setAvailability(defaultAvailability);
     setVersion(0);
     setActiveTaskId(null);
-    setElapsedSecondsByTask({});
     setProgress({});
     setView("capture");
     setNotice("本地数据已删除。");
@@ -508,6 +488,7 @@ export function App() {
             <Review
               tasks={tasks}
               schedule={schedule}
+              availability={availability}
               version={version}
               onUpdateTask={updateTask}
               onAddTask={addTask}
@@ -528,10 +509,12 @@ export function App() {
               countdownSeconds={countdownSeconds}
               countdownTotalSeconds={countdownTotalSeconds}
               isActiveTask={activeTaskId === currentTask.id}
+              isRunning={isRunning}
               reminderInterval={reminderInterval}
               onSelect={setCurrentTaskId}
               onProgress={updateProgress}
               onComplete={completeTask}
+              onToggleRunning={() => setIsRunning((running) => !running)}
               onBlocker={() => {
                 setBlocker({});
                 setCustomReason("");
@@ -770,37 +753,24 @@ function ScheduleTime({
   onUpdateTime: (id: string, field: "start" | "end", value: string) => void;
 }) {
   const segments = getScheduleSegments(task);
-  if (segments.length > 1) {
-    return (
-      <div className="time-segments" title="任务会在不可用时段暂停，不发送提醒">
-        <div>
-          {segments.map((segment) => (
-            <span key={`${task.id}-${segment.startMinutes}`}>
-              {segment.startLabel}–{segment.endLabel}
-            </span>
-          ))}
-        </div>
-        <small>跨可用时段</small>
-      </div>
-    );
-  }
   const startValue = task.startMinutes !== null ? task.startLabel : "";
   const endValue = task.endMinutes !== null ? task.endLabel : "";
   return (
     <div className={task.scheduled ? undefined : "manual-time"}>
+      {segments.length > 1 && <><small>跨可用时段</small><small>编辑后按连续时间重排</small></>}
       <div>
         <input
           type="time"
           value={startValue}
           onChange={(event) => onUpdateTime(task.id, "start", event.target.value)}
-          aria-label={`${task.title} 开始时间`}
+          aria-label={task.title + " 开始时间"}
         />
         <span>至</span>
         <input
           type="time"
           value={endValue}
           onChange={(event) => onUpdateTime(task.id, "end", event.target.value)}
-          aria-label={`${task.title} 结束时间`}
+          aria-label={task.title + " 结束时间"}
         />
       </div>
       {!task.scheduled && <small>手动安排</small>}
@@ -810,6 +780,7 @@ function ScheduleTime({
 function Review({
   tasks,
   schedule,
+  availability,
   version,
   onUpdateTask,
   onAddTask,
@@ -820,6 +791,7 @@ function Review({
 }: {
   tasks: Task[];
   schedule: ScheduledTask[];
+  availability: AvailabilityBlock[];
   version: number;
   onUpdateTask: (id: string, patch: Partial<Task>) => void;
   onAddTask: () => void;
@@ -829,6 +801,7 @@ function Review({
   onBack: () => void;
 }) {
   const unscheduled = schedule.filter((task) => !task.scheduled).length;
+  const overflowTasks = getScheduleOverflowTasks(schedule, availability);
   return (
     <section>
       <div className="heading-row">
@@ -951,14 +924,22 @@ function Review({
               </div>
             </div>
           </div>
-          <div className={unscheduled ? "warning-card" : "info-card"}>
+          <div className={unscheduled || overflowTasks.length ? "warning-card" : "info-card"}>
             <AlertCircle size={17} />
             <div>
-              <strong>{unscheduled ? `${unscheduled} 项任务暂未安排` : "当前没有时间冲突"}</strong>
+              <strong>
+                {unscheduled
+                  ? unscheduled + " 项任务暂未安排"
+                  : overflowTasks.length
+                    ? overflowTasks.length + " 项任务超出今日可用时段"
+                    : "当前没有时间冲突"}
+              </strong>
               <p>
                 {unscheduled
                   ? "可以减少耗时、增加可用时段，或确认后稍后处理。"
-                  : "确认计划后才会创建和启动提醒节点。"}
+                  : overflowTasks.length
+                    ? "已按任务耗时继续往后排，请确认是否接受今天可用时段之外的执行时间。"
+                    : "确认计划后才会创建和启动提醒节点。"}
               </p>
             </div>
           </div>
@@ -982,10 +963,12 @@ function Execute({
   countdownSeconds,
   countdownTotalSeconds,
   isActiveTask,
+  isRunning,
   reminderInterval,
   onSelect,
   onProgress,
   onComplete,
+  onToggleRunning,
   onBlocker,
   onReview,
 }: {
@@ -995,10 +978,12 @@ function Execute({
   countdownSeconds: number;
   countdownTotalSeconds: number;
   isActiveTask: boolean;
+  isRunning: boolean;
   reminderInterval: number | null;
   onSelect: (id: string) => void;
   onProgress: (value: number) => void;
   onComplete: () => void;
+  onToggleRunning: () => void;
   onBlocker: () => void;
   onReview: () => void;
 }) {
@@ -1133,6 +1118,9 @@ function Execute({
               </button>
             </div>
             <div className="focus-footer">
+              <button className="secondary" onClick={onToggleRunning}>
+                {isRunning ? "暂停任务" : "继续任务"}
+              </button>
               <button className="primary light" onClick={onComplete}>
                 <Check size={17} />
                 标记为已完成

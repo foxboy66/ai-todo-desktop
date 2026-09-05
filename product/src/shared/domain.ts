@@ -102,6 +102,22 @@ export function isTaskAvailableAt(task: Pick<ScheduledTask, 'scheduled' | 'start
   return getScheduleSegments(task).some((segment) => nowMinutes >= segment.startMinutes && nowMinutes < segment.endMinutes);
 }
 
+export function getSecondsUntilTaskEnd(task: Pick<ScheduledTask, 'scheduled' | 'endMinutes'>, now = new Date()) {
+  if (!task.scheduled || task.endMinutes === null) return 0;
+  const nowSeconds = getCurrentMinutes(now) * 60 + now.getSeconds();
+  return Math.max(0, Math.round(task.endMinutes * 60 - nowSeconds));
+}
+
+export function getCurrentScheduledTask(schedule: ScheduledTask[], now = new Date()) {
+  const pending = schedule.filter((task) => task.scheduled && task.status !== '已完成');
+  if (!pending.length) return undefined;
+  const nowMinutes = getCurrentMinutes(now) + now.getSeconds() / 60;
+  return pending.find((task) => isTaskAvailableAt(task, now))
+    ?? pending.find((task) => task.startMinutes !== null && task.endMinutes !== null && nowMinutes >= task.startMinutes && nowMinutes < task.endMinutes)
+    ?? pending.find((task) => task.startMinutes !== null && task.startMinutes > nowMinutes)
+    ?? pending[0];
+}
+
 export function isAvailabilityOpenAt(availability: AvailabilityBlock[], now = new Date()) {
   const nowMinutes = getCurrentMinutes(now) + now.getSeconds() / 60;
   return availability.some((block) => {
@@ -195,6 +211,57 @@ export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[], 
     };
   });
 }
+export function reflowScheduleFromTask(
+  schedule: ScheduledTask[],
+  taskId: string,
+  startMinutes: number,
+  duration: number,
+  buffer = 15,
+) {
+  const taskIndex = schedule.findIndex((task) => task.id === taskId);
+  if (taskIndex < 0) return schedule;
+  let cursor = startMinutes;
+  return schedule.map((task, index) => {
+    if (index < taskIndex) return task;
+    const taskDuration = index === taskIndex ? duration : task.duration;
+    const endMinutes = cursor + taskDuration;
+    const segment = {
+      startMinutes: cursor,
+      endMinutes,
+      startLabel: formatTime(cursor),
+      endLabel: formatTime(endMinutes),
+    };
+    cursor = endMinutes + buffer;
+    return {
+      ...task,
+      duration: taskDuration,
+      scheduled: true,
+      startMinutes: segment.startMinutes,
+      endMinutes: segment.endMinutes,
+      startLabel: segment.startLabel,
+      endLabel: segment.endLabel,
+      checkpoints: getCheckpoints(segment.startMinutes, taskDuration),
+      segments: [segment],
+      status: task.status === '待安排' ? '已安排' : task.status,
+    };
+  });
+}
+
+export function getScheduleOverflowTasks(schedule: ScheduledTask[], availability: AvailabilityBlock[]) {
+  const blocks = availability
+    .filter((block) => block.kind !== 'busy')
+    .map((block) => ({ startMinutes: parseTime(block.start), endMinutes: parseTime(block.end) }))
+    .filter((block) => block.endMinutes > block.startMinutes);
+  return schedule.filter((task) =>
+    task.scheduled &&
+    getScheduleSegments(task).some(
+      (segment) => !blocks.some(
+        (block) => segment.startMinutes >= block.startMinutes && segment.endMinutes <= block.endMinutes,
+      ),
+    ),
+  );
+}
+
 function estimateDuration(title: string) {
   if (/邮件|消息|回复/.test(title)) return 30;
   if (/会议|评审|沟通/.test(title)) return 60;

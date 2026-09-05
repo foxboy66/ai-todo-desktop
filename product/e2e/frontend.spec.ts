@@ -21,11 +21,11 @@ const emptyState: PlanSnapshot = {
 // Only the Electron IPC boundary is replaced, so real user data/API keys are never touched.
 async function boot(
   page: Page,
-  options: { state?: PlanSnapshot; failGenerate?: boolean; failLoad?: boolean } = {},
+  options: { state?: PlanSnapshot; failGenerate?: boolean; failLoad?: boolean; currentTime?: string } = {},
 ) {
   const calls: BridgeCall[] = [];
   let snapshot = structuredClone(options.state ?? emptyState);
-  await page.clock.setFixedTime(new Date("2026-09-05T08:00:00+08:00"));
+  await page.clock.setFixedTime(new Date(options.currentTime ?? "2026-09-05T08:00:00+08:00"));
   await page.route("**/__test__/*", async (route) => {
     const method = new URL(route.request().url()).pathname.split("/").pop()!;
     const input = route.request().postDataJSON() ?? {};
@@ -234,6 +234,44 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
   await expect(page.locator(".focus-top h2")).toHaveText("回复客户邮件");
   await expect(page.locator(".timeline-item.done")).toContainText("准备周会演示");
   expect(errors).toEqual([]);
+});
+
+test("uses the current task end time for countdown after an earlier task has expired", async ({ page }) => {
+  const tasks = starterTasks.slice(0, 2).map((task, index) => ({
+    ...task,
+    id: "clock-task-" + index,
+    duration: 60,
+  }));
+  const schedule = buildSchedule(
+    tasks,
+    [{ id: "afternoon", start: "15:00", end: "18:00", kind: "available" }],
+    15 * 60,
+  );
+  await boot(page, {
+    currentTime: "2026-09-05T16:27:00+08:00",
+    state: { tasks, schedule, availability: [{ id: "afternoon", start: "15:00", end: "18:00", kind: "available" }], version: 1, confirmed: true },
+  });
+  await expect(page.locator(".focus-top h2")).toHaveText(tasks[1].title);
+  await expect(page.getByRole("timer").locator("strong")).toHaveText("00:48:00");
+});
+
+test("reflows following task times and warns when the new timeline exceeds availability", async ({ page }) => {
+  const tasks = starterTasks.map((task, index) => ({
+    ...task,
+    id: "edit-task-" + index,
+    duration: [60, 60, 30][index],
+  }));
+  const availability = [{ id: "morning", start: "09:00", end: "11:00", kind: "available" as const }];
+  const schedule = buildSchedule(tasks, [{ id: "morning", start: "09:00", end: "18:00", kind: "available" }], 9 * 60);
+  await boot(page, {
+    state: { tasks, schedule, availability, version: 1, confirmed: false },
+  });
+  await page.getByLabel(tasks[1].title + " 结束时间", { exact: true }).fill("12:00");
+  await expect(page.getByLabel(tasks[2].title + " 开始时间", { exact: true })).toHaveValue("12:15");
+  await page.getByLabel(tasks[1].title + " 结束时间", { exact: true }).fill("17:30");
+  await expect(page.getByLabel(tasks[2].title + " 开始时间", { exact: true })).toHaveValue("17:45");
+  await expect(page.getByRole("status")).toContainText("超出今日可用时段");
+  await expect(page.getByText("2 项任务超出今日可用时段", { exact: true })).toBeVisible();
 });
 
 test("restores a confirmed plan, receives reminders and confirms replan only explicitly", async ({

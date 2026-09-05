@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildReminderNodes, buildSchedule, createDraftTask, formatScheduleLabel, getCheckpoints, getReminderInterval, isAvailabilityOpenAt, isTaskAvailableAt, parseTaskInput } from '../src/shared/domain';
+import { buildReminderNodes, buildSchedule, createDraftTask, formatScheduleLabel, getCheckpoints, getCurrentScheduledTask, getReminderInterval, getScheduleOverflowTasks, getSecondsUntilTaskEnd, isAvailabilityOpenAt, isTaskAvailableAt, parseTaskInput, reflowScheduleFromTask } from '../src/shared/domain';
 
 describe('AI ToDo 领域规则', () => {
   it('创建可编辑的新计划草稿', () => {
@@ -26,6 +26,33 @@ describe('AI ToDo 领域规则', () => {
   it('支持用分号或换行拆分多个任务', () => {
     const tasks = parseTaskInput('整理资料；回复邮件\n准备会议');
     expect(tasks.map((task) => task.title)).toEqual(['整理资料', '回复邮件', '准备会议']);
+  });
+
+  it('按绝对结束时刻计算倒计时，并自动识别当前执行任务', () => {
+    const tasks = [
+      { ...parseTaskInput('第一个任务')[0], id: 'first', duration: 60 },
+      { ...parseTaskInput('第二个任务')[0], id: 'second', duration: 60 },
+    ];
+    const schedule = buildSchedule(tasks, [{ id: 'afternoon', start: '15:00', end: '18:00', kind: 'available' }], 15 * 60);
+    expect(getCurrentScheduledTask(schedule, new Date(2026, 0, 1, 16, 27, 0))?.id).toBe('second');
+    expect(getSecondsUntilTaskEnd(schedule[1], new Date(2026, 0, 1, 16, 27, 0))).toBe(48 * 60);
+    expect(getSecondsUntilTaskEnd(schedule[0], new Date(2026, 0, 1, 16, 27, 0))).toBe(0);
+  });
+
+  it('修改任务截止时间后顺延后续任务，并标记超出可用时段的任务', () => {
+    const tasks = [
+      { ...parseTaskInput('第一个任务')[0], id: 'first', duration: 60 },
+      { ...parseTaskInput('第二个任务')[0], id: 'second', duration: 60 },
+      { ...parseTaskInput('第三个任务')[0], id: 'third', duration: 30 },
+    ];
+    const schedule = buildSchedule(tasks, [{ id: 'afternoon', start: '09:00', end: '11:00', kind: 'available' }], 9 * 60);
+    const next = reflowScheduleFromTask(schedule, 'second', 10 * 60, 60);
+    expect(next.map((task) => [task.startLabel, task.endLabel])).toEqual([
+      ['09:00', '10:00'],
+      ['10:00', '11:00'],
+      ['11:15', '11:45'],
+    ]);
+    expect(getScheduleOverflowTasks(next, [{ id: 'afternoon', start: '09:00', end: '11:00', kind: 'available' }]).map((task) => task.id)).toEqual(['third']);
   });
 
   it('从当前时间开始安排，不把任务放回已经过去的时间', () => {

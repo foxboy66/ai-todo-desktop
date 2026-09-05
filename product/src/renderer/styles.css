@@ -30,3 +30,5 @@ button { cursor: pointer; }
 .time-segments { display:flex; flex-direction:column; gap:3px; color:#36554f; font-size:11px; line-height:1.35; } .time-segments > div { display:flex; flex-wrap:wrap; gap:3px; } .time-segments span { white-space:nowrap; } .time-segments small { color:#82948f; font-size:10px; }
 
 .priority-cell { display:flex; justify-content:center; } .priority-cell select { width:66px; height:34px; padding:0 5px; border:1px solid #d6e2df; border-radius:6px; color:#50706a; background:white; font-size:11px; } .task-definition-input { width:100%; margin:5px 0 0; padding:4px; border:1px solid transparent; border-radius:6px; color:#80918d; background:transparent; font-size:11px; } .task-definition-input:hover { border-color:#d5e2df; }
+
+.manual-time { display:flex; flex-direction:column; gap:3px; } .manual-time > div { display:flex; align-items:center; gap:5px; } .manual-time small { color:#a87217; font-size:10px; }

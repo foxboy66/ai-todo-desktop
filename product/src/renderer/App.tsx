@@ -72,10 +72,14 @@ export function App() {
   }
 
   function updateTask(id: string, patch: Partial<Task>) {
-    setTasks((items) => items.map((task) => task.id === id ? { ...task, ...patch } : task));
-    setSchedule(buildSchedule(tasks.map((task) => task.id === id ? { ...task, ...patch } : task), availability));
+    const nextTasks = tasks.map((task) => task.id === id ? { ...task, ...patch } : task);
+    setTasks(nextTasks);
+    if (patch.duration !== undefined) {
+      setSchedule(buildSchedule(nextTasks, availability));
+    } else {
+      setSchedule((items) => items.map((task) => task.id === id ? { ...task, ...patch } : task));
+    }
   }
-
   function addTask() {
     const task = createDraftTask(tasks.length);
     const nextTasks = [...tasks, task];
@@ -83,19 +87,28 @@ export function App() {
     setSchedule(buildSchedule(nextTasks, availability));
     setNotice('已添加新计划，请补充任务名称、完成标准、优先级和耗时。');
   }
-
   function updateTime(id: string, field: 'start' | 'end', value: string) {
     const current = schedule.find((task) => task.id === id);
-    if (!current || !current.scheduled) return;
+    if (!current || !value) return;
     if (getScheduleSegments(current).length > 1) {
       setNotice('跨可用时段任务请通过修改耗时或可用时段后重新生成计划。');
       return;
     }
-    const startMinutes = parseTime(field === 'start' ? value : current.startLabel);
-    const endMinutes = field === 'end' ? parseTime(value) : startMinutes + current.duration;
+    const typedMinutes = parseTime(value);
+    const startMinutes = field === 'start'
+      ? typedMinutes
+      : current.startMinutes ?? Math.max(0, typedMinutes - current.duration);
+    const endMinutes = field === 'end'
+      ? typedMinutes
+      : current.endMinutes ?? startMinutes + current.duration;
+    if (endMinutes <= startMinutes) {
+      setNotice('结束时间需要晚于开始时间。');
+      return;
+    }
     const duration = field === 'end' ? Math.max(15, endMinutes - startMinutes) : current.duration;
+    const segment = { startMinutes, endMinutes: startMinutes + duration, startLabel: formatTime(startMinutes), endLabel: formatTime(startMinutes + duration) };
     if (field === 'end') setTasks((items) => items.map((task) => task.id === id ? { ...task, duration } : task));
-    setSchedule((items) => items.map((task) => task.id === id ? { ...task, duration, startMinutes, endMinutes: startMinutes + duration, startLabel: formatTime(startMinutes), endLabel: formatTime(startMinutes + duration), checkpoints: getCheckpoints(startMinutes, duration) } : task));
+    setSchedule((items) => items.map((task) => task.id === id ? { ...task, duration, scheduled: true, startMinutes, endMinutes: startMinutes + duration, startLabel: formatTime(startMinutes), endLabel: formatTime(startMinutes + duration), checkpoints: getCheckpoints(startMinutes, duration), segments: [segment], status: task.status === '待安排' ? '已安排' : task.status } : task));
     setNotice('已修改任务时间，确认计划后才会正式应用。');
   }
   function addAvailability() { setAvailability((items) => [...items, { id: `slot-${Date.now()}`, start: '19:00', end: '20:00', kind: 'available' }]); }
@@ -178,11 +191,13 @@ function ScheduleTime({ task, onUpdateTime }: { task: ScheduledTask; onUpdateTim
   if (segments.length > 1) {
     return <div className="time-segments" title="任务会在不可用时段暂停，不发送提醒"><div>{segments.map((segment) => <span key={`${task.id}-${segment.startMinutes}`}>{segment.startLabel}–{segment.endLabel}</span>)}</div><small>跨可用时段</small></div>;
   }
-  return <><input type="time" value={task.startLabel} onChange={(event) => onUpdateTime(task.id, 'start', event.target.value)} aria-label={`${task.title} 开始时间`} /><span>至</span><input type="time" value={task.endLabel} onChange={(event) => onUpdateTime(task.id, 'end', event.target.value)} aria-label={`${task.title} 结束时间`} /></>;
+  const startValue = task.startMinutes !== null ? task.startLabel : '';
+  const endValue = task.endMinutes !== null ? task.endLabel : '';
+  return <div className={task.scheduled ? undefined : 'manual-time'}><div><input type="time" value={startValue} onChange={(event) => onUpdateTime(task.id, 'start', event.target.value)} aria-label={`${task.title} 开始时间`} /><span>至</span><input type="time" value={endValue} onChange={(event) => onUpdateTime(task.id, 'end', event.target.value)} aria-label={`${task.title} 结束时间`} /></div>{!task.scheduled && <small>手动安排</small>}</div>;
 }
 function Review({ tasks, schedule, version, onUpdateTask, onAddTask, onUpdateTime, onRemoveTask, onConfirm, onBack }: { tasks: Task[]; schedule: ScheduledTask[]; version: number; onUpdateTask: (id: string, patch: Partial<Task>) => void; onAddTask: () => void; onUpdateTime: (id: string, field: 'start' | 'end', value: string) => void; onRemoveTask: (id: string) => void; onConfirm: () => void; onBack: () => void }) {
   const unscheduled = schedule.filter((task) => !task.scheduled).length;
-  return <section><div className="heading-row"><div><span className="eyebrow">参考计划 · 草稿{version ? ` · v${version + 1}` : ''}</span><h1>这份安排合适吗？</h1><p>AI 负责提出建议，最终时间始终由你确认。</p></div><div className="heading-buttons"><button className="secondary" onClick={onAddTask}><Plus size={16} />添加计划</button><button className="secondary" onClick={onBack}><RotateCcw size={16} />重新录入</button><button className="primary" onClick={onConfirm}>确认并开始<ChevronRight size={16} /></button></div></div><div className="review-grid"><div className="surface table-surface"><div className="table-head"><span>时间</span><span>任务与完成标准</span><span>优先级</span><span>耗时 / 操作</span></div>{schedule.map((task) => <div className="task-row" key={task.id}><div className="time-cell">{task.scheduled ? <ScheduleTime task={task} onUpdateTime={onUpdateTime} /> : <strong className="unscheduled">未安排</strong>}</div><div className="task-main"><input className="task-title-input" value={task.title} onChange={(event) => onUpdateTask(task.id, { title: event.target.value })} aria-label={`${task.title} 任务名称`} /><input className="task-definition-input" value={task.doneDefinition} onChange={(event) => onUpdateTask(task.id, { doneDefinition: event.target.value })} aria-label={`${task.title} 完成标准`} /></div><div className="priority-cell"><select value={task.priority} onChange={(event) => onUpdateTask(task.id, { priority: event.target.value as Priority })} aria-label={`${task.title} 优先级`}><option>高</option><option>中</option><option>低</option></select></div><div className="task-actions"><input type="number" min="15" step="5" value={task.duration} onChange={(event) => onUpdateTask(task.id, { duration: Math.max(15, Number(event.target.value) || 15) })} /><span>分</span><button className="remove-button" onClick={() => onRemoveTask(task.id)} aria-label={`删除${task.title}`}><Trash2 size={15} /></button></div></div>)}</div><aside className="review-aside"><div className="dark-card"><Sparkles size={18} /><h3>排程说明</h3><p>任务会按顺序跨可用时段累计执行；不可用时段自动暂停，不创建提醒。不同任务之间保留 15 分钟缓冲，所有时间冲突都会明确展示。</p><div className="stat-row"><div><strong>{schedule.filter((task) => task.scheduled).length}</strong><small>已安排任务</small></div><div><strong>{Math.floor(tasks.reduce((sum, task) => sum + task.duration, 0) / 60)}h</strong><small>专注时间</small></div></div></div><div className={unscheduled ? 'warning-card' : 'info-card'}><AlertCircle size={17} /><div><strong>{unscheduled ? `${unscheduled} 项任务暂未安排` : '当前没有时间冲突'}</strong><p>{unscheduled ? '可以减少耗时、增加可用时段，或确认后稍后处理。' : '确认计划后才会创建和启动提醒节点。'}</p></div></div><div className="info-card"><BellRing size={17} /><div><strong>提醒规则透明</strong><p>30 分钟以内不设置中途检查点；更长任务按 30～60 分钟间隔检查。</p></div></div></aside></div></section>;
+  return <section><div className="heading-row"><div><span className="eyebrow">参考计划 · 草稿{version ? ` · v${version + 1}` : ''}</span><h1>这份安排合适吗？</h1><p>AI 负责提出建议，最终时间始终由你确认。</p></div><div className="heading-buttons"><button className="secondary" onClick={onAddTask}><Plus size={16} />添加计划</button><button className="secondary" onClick={onBack}><RotateCcw size={16} />重新录入</button><button className="primary" onClick={onConfirm}>确认并开始<ChevronRight size={16} /></button></div></div><div className="review-grid"><div className="surface table-surface"><div className="table-head"><span>时间</span><span>任务与完成标准</span><span>优先级</span><span>耗时 / 操作</span></div>{schedule.map((task) => <div className="task-row" key={task.id}><div className="time-cell"><ScheduleTime task={task} onUpdateTime={onUpdateTime} /></div><div className="task-main"><input className="task-title-input" value={task.title} onChange={(event) => onUpdateTask(task.id, { title: event.target.value })} aria-label={`${task.title} 任务名称`} /><input className="task-definition-input" value={task.doneDefinition} onChange={(event) => onUpdateTask(task.id, { doneDefinition: event.target.value })} aria-label={`${task.title} 完成标准`} /></div><div className="priority-cell"><select value={task.priority} onChange={(event) => onUpdateTask(task.id, { priority: event.target.value as Priority })} aria-label={`${task.title} 优先级`}><option>高</option><option>中</option><option>低</option></select></div><div className="task-actions"><input type="number" min="15" step="5" value={task.duration} onChange={(event) => onUpdateTask(task.id, { duration: Math.max(15, Number(event.target.value) || 15) })} /><span>分</span><button className="remove-button" onClick={() => onRemoveTask(task.id)} aria-label={`删除${task.title}`}><Trash2 size={15} /></button></div></div>)}</div><aside className="review-aside"><div className="dark-card"><Sparkles size={18} /><h3>排程说明</h3><p>任务会按顺序跨可用时段累计执行；不可用时段自动暂停，不创建提醒。不同任务之间保留 15 分钟缓冲，所有时间冲突都会明确展示。</p><div className="stat-row"><div><strong>{schedule.filter((task) => task.scheduled).length}</strong><small>已安排任务</small></div><div><strong>{Math.floor(tasks.reduce((sum, task) => sum + task.duration, 0) / 60)}h</strong><small>专注时间</small></div></div></div><div className={unscheduled ? 'warning-card' : 'info-card'}><AlertCircle size={17} /><div><strong>{unscheduled ? `${unscheduled} 项任务暂未安排` : '当前没有时间冲突'}</strong><p>{unscheduled ? '可以减少耗时、增加可用时段，或确认后稍后处理。' : '确认计划后才会创建和启动提醒节点。'}</p></div></div><div className="info-card"><BellRing size={17} /><div><strong>提醒规则透明</strong><p>30 分钟以内不设置中途检查点；更长任务按 30～60 分钟间隔检查。</p></div></div></aside></div></section>;
 }
 
 function Execute({ schedule, currentTask, progress, running, reminderInterval, onSelect, onProgress, onComplete, onToggle, onBlocker, onReview }: { schedule: ScheduledTask[]; currentTask: ScheduledTask; progress: number; running: boolean; reminderInterval: number | null; onSelect: (id: string) => void; onProgress: (value: number) => void; onComplete: () => void; onToggle: () => void; onBlocker: () => void; onReview: () => void }) {

@@ -31,6 +31,7 @@ describe('Windows launcher', () => {
     expect(rendererApp).toContain('添加计划')
     expect(rendererApp).toContain('完成标准')
     expect(rendererApp).toContain('<span>优先级</span>')
+    expect(rendererApp).toContain('manual-time')
     const viteConfig = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf8')
     expect(viteConfig).toContain("base: './'")
 

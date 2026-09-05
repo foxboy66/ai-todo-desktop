@@ -389,6 +389,7 @@ export function App() {
             </button>
           ))}
         </nav>
+        <CatFriend />
         <div className="sidebar-note">
           <span className="status-dot" />
           <strong>安心存在这台设备</strong>
@@ -680,7 +681,6 @@ function Capture({
             </button>
           </div>
         </div>
-        <div className="capture-aside">
         <aside className="ai-preview">
           <div className="ai-preview-head">
             <div>
@@ -703,8 +703,6 @@ function Capture({
             当前估计共需 <strong>{minutesLabel(plannedMinutes)}</strong>，排程会避开不可用时间。
           </p>
         </aside>
-        <CatFriend />
-        </div>
       </div>
       <p className="capture-footnote">
         <Sprout size={14} />
@@ -883,7 +881,6 @@ function Review({
           ))}
         </div>
         <aside className="review-aside">
-          <CatFriend />
           <div className="dark-card">
             <Sparkles size={18} />
             <h3>排程说明</h3>
@@ -1108,7 +1105,6 @@ function Execute({
           </div>
         </div>
         <aside className="execute-aside">
-          <CatFriend />
           <div className="surface upcoming">
             <div className="section-title">
               <div>

@@ -142,7 +142,7 @@ async function assertLayout(page: Page) {
 }
 
 async function capture(page: Page, info: TestInfo, name: string) {
-  await page.locator("main img").evaluateAll(async (images) => {
+  await page.locator(".app-shell img").evaluateAll(async (images) => {
     await Promise.all(images.map((image) => (image as HTMLImageElement).decode()));
   });
   await assertLayout(page);
@@ -166,14 +166,22 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
 }, info) => {
   const { calls, errors } = await boot(page);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("把今天，安排得刚刚好。");
-  const companion = page.getByRole("img", { name: "陪伴你的小猫" });
-  await expect(companion).toBeVisible();
+  const companion = page.locator(".sidebar .cat-friend");
+  await expect(companion).toHaveCount(1);
+  await expect(page.locator("main .cat-friend")).toHaveCount(0);
   await expect(companion).toHaveAttribute("src", "./fluffy-cat.png");
   await expect.poll(() => companion.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
-  if (info.project.name === "desktop") {
+  if (info.project.name === "mobile") {
+    await expect(companion).toBeHidden();
+  } else {
+    await expect(companion).toBeVisible();
     const catBounds = await companion.boundingBox();
     const editorBounds = await page.locator(".capture-grid > .surface").boundingBox();
-    expect(catBounds!.x).toBeGreaterThan(editorBounds!.x + editorBounds!.width);
+    const navigationBounds = await page.locator(".step-nav").boundingBox();
+    const noteBounds = await page.locator(".sidebar-note").boundingBox();
+    expect(catBounds!.x + catBounds!.width).toBeLessThan(editorBounds!.x);
+    expect(catBounds!.y).toBeGreaterThan(navigationBounds!.y + navigationBounds!.height);
+    expect(catBounds!.y + catBounds!.height).toBeLessThan(noteBounds!.y);
   }
   await capture(page, info, "capture");
   await page.getByRole("button", { name: "添加时段" }).click();
@@ -195,7 +203,8 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
   await expect(page.getByLabel("新计划 任务名称", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "删除新计划", exact: true }).click();
   await capture(page, info, "review");
-  await expect(page.locator(".review-aside").getByRole("img", { name: "陪伴你的小猫" })).toBeVisible();
+  await expect(page.locator(".sidebar .cat-friend")).toHaveCount(1);
+  await expect(page.locator("main .cat-friend")).toHaveCount(0);
   await page.getByRole("button", { name: "确认并开始" }).click();
   await expect(page.getByRole("heading", { name: "按现在的节奏继续" })).toBeVisible();
   const confirmed = calls.find((call) => call.method === "confirmPlan")!.input;
@@ -219,7 +228,8 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
   await expect(page.getByRole("button", { name: "暂停任务", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "暂停任务", exact: true }).click();
   await capture(page, info, "execute");
-  await expect(page.locator(".execute-aside").getByRole("img", { name: "陪伴你的小猫" })).toBeVisible();
+  await expect(page.locator(".sidebar .cat-friend")).toHaveCount(1);
+  await expect(page.locator("main .cat-friend")).toHaveCount(0);
   await page.getByRole("button", { name: "标记为已完成" }).click();
   await expect(page.locator(".focus-top h2")).toHaveText("回复客户邮件");
   await expect(page.locator(".timeline-item.done")).toContainText("准备周会演示");

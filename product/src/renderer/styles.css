@@ -185,11 +185,10 @@ textarea::placeholder {
   background: var(--green);
 }
 .cat-companion {
-  margin: 0;
-  padding: 12px 0 18px;
+  margin: auto 0;
+  padding: 28px 0;
   text-align: center;
   min-width: 0;
-  grid-column: 1 / -1;
 }
 .cat-companion strong {
   font-size: 13px;
@@ -202,23 +201,14 @@ textarea::placeholder {
 }
 .cat-friend {
   display: block;
-  width: 176px;
+  width: 148px;
   max-width: 100%;
   height: auto;
   aspect-ratio: 1;
   object-fit: contain;
   margin: 0 auto 10px;
 }
-.capture-aside {
-  display: grid;
-  gap: 22px;
-  min-width: 0;
-}
-.capture-aside .cat-friend {
-  width: 220px;
-}
 .sidebar-note {
-  margin-top: auto;
   padding: 17px 4px 0;
   border-top: 1px solid #d8e2cf;
 }
@@ -1503,6 +1493,7 @@ textarea {
     min-height: 44px;
   }
   .step svg,
+  .cat-companion,
   .sidebar-note {
     display: none;
   }

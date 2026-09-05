@@ -8,12 +8,13 @@ describe('Windows launcher', () => {
     const launcher = readFileSync(launcherPath)
 
     expect(launcher.toString('ascii')).toContain('powershell.exe')
-    expect(launcher.toString('ascii')).toContain('start "" powershell.exe')
-    expect(launcher.toString('ascii')).toContain('-WindowStyle Hidden')
+    expect(launcher.toString('ascii')).toContain('wscript.exe')
     expect(launcher.toString('ascii')).toContain('product\\launch-ai-todo.ps1')
     expect(launcher.includes(Buffer.from([0x0d, 0x0a]))).toBe(true)
     expect(launcher.toString('ascii')).not.toMatch(/(^|[^\r])\n/)
-
+    const vbsLauncher = readFileSync(resolve(__dirname, '../launch-ai-todo.vbs'), 'ascii')
+    expect(vbsLauncher).toContain('shell.Run command, 0, False')
+    expect(vbsLauncher).toContain('launch-ai-todo.ps1')
     const powershellScript = readFileSync(resolve(__dirname, '../启动 AI ToDo.ps1'))
     expect([...powershellScript.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
     const powershellText = powershellScript.toString('utf8')

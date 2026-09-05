@@ -8,6 +8,8 @@ describe('Windows launcher', () => {
     const launcher = readFileSync(launcherPath)
 
     expect(launcher.toString('ascii')).toContain('powershell.exe')
+    expect(launcher.toString('ascii')).toContain('start "" powershell.exe')
+    expect(launcher.toString('ascii')).toContain('-WindowStyle Hidden')
     expect(launcher.toString('ascii')).toContain('product\\launch-ai-todo.ps1')
     expect(launcher.includes(Buffer.from([0x0d, 0x0a]))).toBe(true)
     expect(launcher.toString('ascii')).not.toMatch(/(^|[^\r])\n/)

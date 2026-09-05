@@ -26,6 +26,16 @@ describe('AI ToDo 领域规则', () => {
     expect(futureSchedule[0].startLabel).toBe('14:00');
   });
 
+  it('当前任务放不下时，优先安排后续能填入当前时段的任务', () => {
+    const tasks = [
+      { ...parseTaskInput('准备评审')[0], id: 'long-task', duration: 90 },
+      { ...parseTaskInput('回复邮件')[0], id: 'fit-task', duration: 60 },
+    ];
+    const schedule = buildSchedule(tasks, [{ id: 'morning', start: '09:00', end: '12:00', kind: 'available' }], 10 * 60 + 59);
+    expect(schedule.find((task) => task.id === 'fit-task')?.startLabel).toBe('10:59');
+    expect(schedule.find((task) => task.id === 'fit-task')?.endLabel).toBe('11:59');
+    expect(schedule.find((task) => task.id === 'long-task')?.scheduled).toBe(false);
+  });
   it('不把任务安排进不可用时间，并保留未安排任务', () => {
     const tasks = parseTaskInput('准备评审；回复邮件；整理记录');
     const schedule = buildSchedule(tasks, [{ id: 'morning', start: '09:00', end: '10:00', kind: 'available' }, { id: 'afternoon', start: '14:00', end: '15:00', kind: 'available' }]);

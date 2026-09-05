@@ -85,23 +85,29 @@ export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[], 
   let blockIndex = 0;
   let cursor = Math.max(blocks[0]?.startMinutes ?? 0, nowMinutes);
 
-  return tasks.map((task): ScheduledTask => {
-    let scheduled = false;
-    let startMinutes: number | null = null;
-    let endMinutes: number | null = null;
-    while (blockIndex < blocks.length) {
-      const block = blocks[blockIndex];
-      cursor = Math.max(cursor, block.startMinutes);
-      if (cursor + task.duration <= block.endMinutes) {
-        scheduled = true;
-        startMinutes = cursor;
-        endMinutes = cursor + task.duration;
-        cursor = endMinutes + buffer;
-        break;
-      }
+  const placements = new Map<string, { startMinutes: number; endMinutes: number }>();
+  const pendingTasks = [...tasks];
+  while (pendingTasks.length > 0 && blockIndex < blocks.length) {
+    const block = blocks[blockIndex];
+    cursor = Math.max(cursor, block.startMinutes);
+    const taskIndex = pendingTasks.findIndex((task) => cursor + task.duration <= block.endMinutes);
+    if (taskIndex < 0) {
       blockIndex += 1;
       cursor = Math.max(blocks[blockIndex]?.startMinutes ?? 0, nowMinutes);
+      continue;
     }
+    const task = pendingTasks.splice(taskIndex, 1)[0];
+    const startMinutes = cursor;
+    const endMinutes = cursor + task.duration;
+    placements.set(task.id, { startMinutes, endMinutes });
+    cursor = endMinutes + buffer;
+  }
+
+  return tasks.map((task): ScheduledTask => {
+    const placement = placements.get(task.id);
+    const scheduled = Boolean(placement);
+    const startMinutes = placement?.startMinutes ?? null;
+    const endMinutes = placement?.endMinutes ?? null;
     return {
       ...task,
       scheduled,

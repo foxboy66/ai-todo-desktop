@@ -188,6 +188,17 @@ function estimateDuration(title: string) {
   return 45;
 }
 
+export function createDraftTask(index = 0): Task {
+  return {
+    id: `task-draft-${Date.now()}-${index}`,
+    title: '新计划',
+    duration: 45,
+    aiDuration: 45,
+    priority: '中',
+    doneDefinition: '补充这个计划的完成标准',
+    status: '待安排',
+  };
+}
 export function parseTaskInput(input: string): Task[] {
   return input
     .split(/[;；\n。]/)

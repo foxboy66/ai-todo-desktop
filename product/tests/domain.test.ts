@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { buildReminderNodes, buildSchedule, formatScheduleLabel, getCheckpoints, getReminderInterval, parseTaskInput } from '../src/shared/domain';
+import { buildReminderNodes, buildSchedule, createDraftTask, formatScheduleLabel, getCheckpoints, getReminderInterval, parseTaskInput } from '../src/shared/domain';
 
 describe('AI ToDo 领域规则', () => {
+  it('创建可编辑的新计划草稿', () => {
+    const task = createDraftTask(2);
+    expect(task.id).toMatch(/^task-draft-\d+-2$/);
+    expect(task.title).toBe('新计划');
+    expect(task.doneDefinition).toBe('补充这个计划的完成标准');
+    expect(task.duration).toBe(45);
+    expect(task.priority).toBe('中');
+    expect(task.status).toBe('待安排');
+  });
   it('按任务时长生成透明提醒间隔', () => {
     expect(getReminderInterval(30)).toBeNull();
     expect(getReminderInterval(31)).toBe(30);

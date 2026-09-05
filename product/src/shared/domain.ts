@@ -90,6 +90,12 @@ export function formatReminderDueAt(day: Date, label: string) {
   return dueAt.toISOString();
 }
 
+export function normalizeReminderDueAt(value: string) {
+  if (/[zZ]$/.test(value)) return value;
+  const dueAt = new Date(value);
+  return Number.isNaN(dueAt.getTime()) ? value : dueAt.toISOString();
+}
+
 export function getScheduleSegments(task: Pick<ScheduledTask, 'scheduled' | 'startMinutes' | 'endMinutes' | 'segments'>): ScheduleSegment[] {
   if (task.segments?.length) return task.segments;
   if (task.scheduled && task.startMinutes !== null && task.endMinutes !== null) {

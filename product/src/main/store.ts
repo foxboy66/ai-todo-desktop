@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { formatReminderDueAt } from '../shared/domain';
+import { formatReminderDueAt, normalizeReminderDueAt } from '../shared/domain';
 import type { AvailabilityBlock, PlanSnapshot, ReminderNode, ScheduledTask, Task } from '../shared/domain';
 
 function localDayText(day: Date) {
@@ -26,6 +26,19 @@ export class TodoStore {
       CREATE TABLE IF NOT EXISTS progress_events (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, event_type TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_reminders_pending_due ON reminders(status, due_at);
     `);
+    this.migrateLegacyReminderTimes();
+  }
+
+  private migrateLegacyReminderTimes() {
+    const reminders = this.db.prepare('SELECT id, due_at as dueAt FROM reminders').all() as Array<{ id: string; dueAt: string }>;
+    const update = this.db.prepare('UPDATE reminders SET due_at = ? WHERE id = ?');
+    const migrate = this.db.transaction(() => {
+      reminders.forEach((reminder) => {
+        const dueAt = normalizeReminderDueAt(reminder.dueAt);
+        if (dueAt !== reminder.dueAt) update.run(dueAt, reminder.id);
+      });
+    });
+    migrate();
   }
 
   load(): StoredState {

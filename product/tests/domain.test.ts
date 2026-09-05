@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildReminderNodes, buildSchedule, createDraftTask, formatReminderDueAt, formatScheduleLabel, getCheckpoints, getCurrentScheduledTask, getReminderInterval, getScheduleOverflowTasks, getSecondsUntilTaskEnd, isAvailabilityOpenAt, isTaskAvailableAt, parseTaskInput, reflowScheduleFromTask } from '../src/shared/domain';
+import { buildReminderNodes, buildSchedule, createDraftTask, formatReminderDueAt, formatScheduleLabel, normalizeReminderDueAt, getCheckpoints, getCurrentScheduledTask, getReminderInterval, getScheduleOverflowTasks, getSecondsUntilTaskEnd, isAvailabilityOpenAt, isTaskAvailableAt, parseTaskInput, reflowScheduleFromTask } from '../src/shared/domain';
 
 describe('AI ToDo 领域规则', () => {
   it('创建可编辑的新计划草稿', () => {
@@ -27,6 +27,16 @@ describe('AI ToDo 领域规则', () => {
     expect(dueAt.getDate()).toBe(1);
     expect(dueAt.getHours()).toBe(14);
     expect(dueAt.getMinutes()).toBe(0);
+  });
+
+  it('把旧版无时区提醒转换为本地时区的真实时间点', () => {
+    const dueAt = new Date(normalizeReminderDueAt('2026-01-01T14:00:00'));
+
+    expect(dueAt.getFullYear()).toBe(2026);
+    expect(dueAt.getMonth()).toBe(0);
+    expect(dueAt.getDate()).toBe(1);
+    expect(dueAt.getHours()).toBe(14);
+    expect(normalizeReminderDueAt('2026-01-01T06:00:00.000Z')).toBe('2026-01-01T06:00:00.000Z');
   });
 
   it('只生成结束前的检查点', () => {

@@ -86,7 +86,7 @@ try {
   for ($attempt = 0; $attempt -lt 20; $attempt++) {
     Start-Sleep -Milliseconds 250
     try {
-      $health = Invoke-RestMethod  -TimeoutSec 1
+      $health = Invoke-RestMethod $healthUrl -TimeoutSec 1
       if ($health.ok) { $ready = $true; break }
     } catch { }
   }

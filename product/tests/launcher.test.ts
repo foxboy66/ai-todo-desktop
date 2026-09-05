@@ -26,6 +26,7 @@ describe('Windows launcher', () => {
     expect(powershellText).toContain("Join-Path $productRoot '.env'")
     expect(powershellText).toContain("$envConfig['DEEPSEEK_API_KEY']")
     expect(powershellText).toContain('（.env 未配置）')
+    expect(powershellText).toContain('Invoke-RestMethod $healthUrl -TimeoutSec 1')
 
     const envExample = readFileSync(resolve(__dirname, '../.env.example'), 'utf8')
     expect(envExample).toContain('DEEPSEEK_API_KEY=')

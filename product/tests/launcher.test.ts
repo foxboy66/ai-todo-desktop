@@ -21,5 +21,15 @@ describe('Windows launcher', () => {
 
     const viteConfig = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf8')
     expect(viteConfig).toContain("base: './'")
+
+    expect(powershellText).toContain('function Read-DotEnv')
+    expect(powershellText).toContain("Join-Path $productRoot '.env'")
+    expect(powershellText).toContain("$envConfig['DEEPSEEK_API_KEY']")
+    expect(powershellText).toContain('（.env 未配置）')
+
+    const envExample = readFileSync(resolve(__dirname, '../.env.example'), 'utf8')
+    expect(envExample).toContain('DEEPSEEK_API_KEY=')
+    const gitignore = readFileSync(resolve(__dirname, '../.gitignore'), 'utf8')
+    expect(gitignore).toContain('.env')
   })
 })

@@ -2,6 +2,11 @@
 
 AI 个性化 ToDo 的 MVP 桌面实现，按根目录产品设计文档和 `docs/AI_TODO_MVP_技术方案.md` 构建。
 
+## 一键启动（Windows）
+
+复制 `.env.example` 为 `.env`，填写 `DEEPSEEK_API_KEY`，然后双击项目根目录的 `启动 AI ToDo.bat`。启动脚本会自动读取 `product/.env`，配置好 API Key 后不会再次询问。
+
+`.env` 只保存在本机，已被 Git 忽略，不要把真实 API Key 提交到仓库。
 ## 运行
 
 ```bash

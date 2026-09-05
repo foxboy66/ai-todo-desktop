@@ -136,9 +136,7 @@ export function App() {
   const [schedule, setSchedule] = useState<ScheduledTask[]>(() =>
     buildSchedule(starterTasks, defaultAvailability),
   );
-  const [taskInput, setTaskInput] = useState(
-    "完成产品首页；准备下午产品评审；回复客户邮件；整理用户访谈记录",
-  );
+  const [taskInput, setTaskInput] = useState("");
   const [notice, setNotice] = useState("本地数据已准备好。先输入今天想完成的事情。");
   const [loading, setLoading] = useState(false);
   const [version, setVersion] = useState(0);
@@ -707,7 +705,8 @@ function Capture({
           </div>
           <div className="divider" />
           <label className="field-label" htmlFor="task-input">
-            今天想完成什么？
+            <strong>今天想完成什么？</strong>
+            <span className="field-hint">（支持用分号或换行分隔多个任务）</span>
           </label>
           <textarea
             id="task-input"
@@ -716,7 +715,6 @@ function Capture({
             placeholder="例如：准备周会材料；回复客户邮件；跑步 30 分钟"
           />
           <div className="form-footer">
-            <span className="helper">支持用分号或换行分隔多个任务</span>
             <button
               className="primary"
               onClick={onGenerate}

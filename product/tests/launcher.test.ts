@@ -28,6 +28,8 @@ describe('Windows launcher', () => {
     expect(rendererApp).toContain('countdownSeconds')
     expect(rendererApp).toContain('countdown-ring')
     expect(rendererApp).toContain('已同步进度')
+    expect(rendererApp).toContain('（支持用分号或换行分隔多个任务）')
+    expect(rendererApp).not.toContain('完成产品首页；准备下午产品评审；回复客户邮件；整理用户访谈记录')
     expect(rendererApp).toContain('Math.round(currentTask.duration * 60)')
     expect(rendererApp).not.toContain('currentTask.duration * 60 * (1 - progress / 100)')
     expect(rendererApp).toContain('setActiveTaskId(firstTask?.id ?? null)')

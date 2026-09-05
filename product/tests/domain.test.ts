@@ -23,6 +23,11 @@ describe('AI ToDo 领域规则', () => {
     expect(getCheckpoints(14 * 60, 30)).toEqual([]);
   });
 
+  it('支持用分号或换行拆分多个任务', () => {
+    const tasks = parseTaskInput('整理资料；回复邮件\n准备会议');
+    expect(tasks.map((task) => task.title)).toEqual(['整理资料', '回复邮件', '准备会议']);
+  });
+
   it('从当前时间开始安排，不把任务放回已经过去的时间', () => {
     const task = parseTaskInput('回复客户邮件')[0];
     const currentSchedule = buildSchedule([task], [{ id: 'morning', start: '09:00', end: '12:00', kind: 'available' }], 10 * 60 + 59);

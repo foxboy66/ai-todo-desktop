@@ -22,6 +22,9 @@ describe('Windows launcher', () => {
     expect(powershellText).toContain('Push-Location $productRoot')
     expect(powershellText).toContain('--dist-url=https://electronjs.org/headers')
 
+    const rendererStyles = readFileSync(resolve(__dirname, '../src/renderer/styles.css'), 'utf8')
+    expect(rendererStyles).toContain('grid-template-columns:195px minmax(0,1fr) 150px;')
+    expect(rendererStyles).toContain('.time-cell input { width:84px; min-width:84px; }')
     const viteConfig = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf8')
     expect(viteConfig).toContain("base: './'")
 

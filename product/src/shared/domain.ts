@@ -171,7 +171,6 @@ export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[], 
     .map((block) => ({ ...block, startMinutes: parseTime(block.start), endMinutes: parseTime(block.end) }))
     .filter((block) => block.endMinutes > block.startMinutes)
     .sort((a, b) => a.startMinutes - b.startMinutes);
-  const buffer = 15;
   let blockIndex = 0;
   let cursor = Math.max(blocks[0]?.startMinutes ?? 0, nowMinutes);
   const placements = new Map<string, ScheduleSegment[]>();
@@ -200,7 +199,6 @@ export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[], 
       }
     }
     if (segments.length) placements.set(task.id, segments);
-    if (remainingMinutes === 0) cursor += buffer;
     if (blockIndex >= blocks.length) break;
   }
 
@@ -229,7 +227,6 @@ export function reflowScheduleFromTask(
   taskId: string,
   startMinutes: number,
   duration: number,
-  buffer = 15,
 ) {
   const taskIndex = schedule.findIndex((task) => task.id === taskId);
   if (taskIndex < 0) return schedule;
@@ -244,7 +241,7 @@ export function reflowScheduleFromTask(
       startLabel: formatTime(cursor),
       endLabel: formatTime(endMinutes),
     };
-    cursor = endMinutes + buffer;
+    cursor = endMinutes;
     return {
       ...task,
       duration: taskDuration,

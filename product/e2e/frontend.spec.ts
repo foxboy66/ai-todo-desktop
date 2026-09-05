@@ -252,7 +252,7 @@ test("uses the current task end time for countdown after an earlier task has exp
     state: { tasks, schedule, availability: [{ id: "afternoon", start: "15:00", end: "18:00", kind: "available" }], version: 1, confirmed: true },
   });
   await expect(page.locator(".focus-top h2")).toHaveText(tasks[1].title);
-  await expect(page.getByRole("timer").locator("strong")).toHaveText("00:48:00");
+  await expect(page.getByRole("timer").locator("strong")).toHaveText("00:33:00");
   await expect(page.locator(".timeline-item").nth(0)).toBeEnabled();
   await page.locator(".timeline-item").nth(0).click();
   await expect(page.locator(".focus-top h2")).toHaveText(tasks[0].title);
@@ -270,9 +270,9 @@ test("reflows following task times and warns when the new timeline exceeds avail
     state: { tasks, schedule, availability, version: 1, confirmed: false },
   });
   await page.getByLabel(tasks[1].title + " 结束时间", { exact: true }).fill("12:00");
-  await expect(page.getByLabel(tasks[2].title + " 开始时间", { exact: true })).toHaveValue("12:15");
+  await expect(page.getByLabel(tasks[2].title + " 开始时间", { exact: true })).toHaveValue("12:00");
   await page.getByLabel(tasks[1].title + " 结束时间", { exact: true }).fill("17:30");
-  await expect(page.getByLabel(tasks[2].title + " 开始时间", { exact: true })).toHaveValue("17:45");
+  await expect(page.getByLabel(tasks[2].title + " 开始时间", { exact: true })).toHaveValue("17:30");
   await expect(page.getByRole("status")).toContainText("超出今日可用时段");
   await expect(page.getByText("2 项任务超出今日可用时段", { exact: true })).toBeVisible();
 });
@@ -329,7 +329,7 @@ test("restores a confirmed plan, receives reminders and confirms replan only exp
 test("segmented and unscheduled tasks remain editable without hidden time controls", async ({
   page,
 }) => {
-  const tasks = starterTasks.map((task, index) => ({ ...task, duration: [210, 180, 60][index] }));
+  const tasks = starterTasks.map((task, index) => ({ ...task, duration: [240, 180, 60][index] }));
   const schedule = buildSchedule(tasks, defaultAvailability, 480);
   await boot(page, {
     state: { tasks, schedule, availability: defaultAvailability, version: 1, confirmed: false },

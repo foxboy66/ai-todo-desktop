@@ -56,7 +56,8 @@ describe('AI ToDo 领域规则', () => {
     ];
     const schedule = buildSchedule(tasks, [{ id: 'afternoon', start: '15:00', end: '18:00', kind: 'available' }], 15 * 60);
     expect(getCurrentScheduledTask(schedule, new Date(2026, 0, 1, 16, 27, 0))?.id).toBe('second');
-    expect(getSecondsUntilTaskEnd(schedule[1], new Date(2026, 0, 1, 16, 27, 0))).toBe(48 * 60);
+    expect(schedule.map((task) => [task.startLabel, task.endLabel])).toEqual([['15:00', '16:00'], ['16:00', '17:00']]);
+    expect(getSecondsUntilTaskEnd(schedule[1], new Date(2026, 0, 1, 16, 27, 0))).toBe(33 * 60);
     expect(getSecondsUntilTaskEnd(schedule[0], new Date(2026, 0, 1, 16, 27, 0))).toBe(0);
   });
 
@@ -71,7 +72,7 @@ describe('AI ToDo 领域规则', () => {
     expect(next.map((task) => [task.startLabel, task.endLabel])).toEqual([
       ['09:00', '10:00'],
       ['10:00', '11:00'],
-      ['11:15', '11:45'],
+      ['11:00', '11:30'],
     ]);
     expect(getScheduleOverflowTasks(next, [{ id: 'afternoon', start: '09:00', end: '11:00', kind: 'available' }]).map((task) => task.id)).toEqual(['third']);
   });

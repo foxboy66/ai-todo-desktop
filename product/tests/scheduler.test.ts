@@ -45,7 +45,10 @@ describe('提醒调度器', () => {
       getDueReminders: vi.fn(() => [reminder]),
       markReminderSent: vi.fn(),
     };
-    const appWindow = { webContents: { send: mocks.send } };
+    const appWindow = {
+      isDestroyed: vi.fn(() => false),
+      webContents: { isDestroyed: vi.fn(() => false), send: mocks.send },
+    };
 
     const scheduler = new ReminderScheduler(store as never, appWindow as never);
     (scheduler as unknown as { tick: () => void }).tick();
@@ -56,4 +59,54 @@ describe('提醒调度器', () => {
     expect(mocks.beep).toHaveBeenCalledOnce();
     expect(mocks.send).toHaveBeenCalledWith('reminder:due', reminder);
   });
+  it('窗口被销毁后跳过渲染器消息，不再抛出异常', () => {
+    const reminder = {
+      id: 'reminder-destroyed-window',
+      taskId: 'task-1',
+      kind: 'checkpoint' as const,
+      dueAt: '2026-01-01T01:00:00.000Z',
+      status: 'pending' as const,
+    };
+    const store = {
+      getDueReminders: vi.fn(() => [reminder]),
+      markReminderSent: vi.fn(),
+    };
+    const appWindow = {
+      isDestroyed: vi.fn(() => true),
+      webContents: { isDestroyed: vi.fn(() => true), send: mocks.send },
+    };
+
+    const scheduler = new ReminderScheduler(store as never, appWindow as never);
+
+    expect(() => (scheduler as unknown as { tick: () => void }).tick()).not.toThrow();
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it('系统通知对象销毁时忽略退出竞态，不影响调度循环', () => {
+    mocks.notification.mockImplementation(() => {
+      throw new Error('Object has been destroyed');
+    });
+    const reminder = {
+      id: 'reminder-destroyed-notification',
+      taskId: 'task-1',
+      kind: 'end' as const,
+      dueAt: '2026-01-01T01:00:00.000Z',
+      status: 'pending' as const,
+    };
+    const store = {
+      getDueReminders: vi.fn(() => [reminder]),
+      markReminderSent: vi.fn(),
+    };
+    const appWindow = {
+      isDestroyed: vi.fn(() => false),
+      webContents: { isDestroyed: vi.fn(() => false), send: mocks.send },
+    };
+
+    const scheduler = new ReminderScheduler(store as never, appWindow as never);
+
+    expect(() => (scheduler as unknown as { tick: () => void }).tick()).not.toThrow();
+    expect(mocks.beep).toHaveBeenCalledOnce();
+    expect(mocks.send).toHaveBeenCalledWith('reminder:due', reminder);
+  });
+
 });

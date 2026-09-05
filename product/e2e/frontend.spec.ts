@@ -142,6 +142,9 @@ async function assertLayout(page: Page) {
 }
 
 async function capture(page: Page, info: TestInfo, name: string) {
+  await page.locator("main img").evaluateAll(async (images) => {
+    await Promise.all(images.map((image) => (image as HTMLImageElement).decode()));
+  });
   await assertLayout(page);
   const path = info.outputPath(name + ".png");
   await page.screenshot({ path, fullPage: true });
@@ -164,10 +167,13 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
   const { calls, errors } = await boot(page);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("把今天，安排得刚刚好。");
   const companion = page.getByRole("img", { name: "陪伴你的小猫" });
-  if (info.project.name === "mobile") {
-    await expect(companion).toBeHidden();
-  } else {
-    await expect(companion).toBeVisible();
+  await expect(companion).toBeVisible();
+  await expect(companion).toHaveAttribute("src", "./fluffy-cat.png");
+  await expect.poll(() => companion.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+  if (info.project.name === "desktop") {
+    const catBounds = await companion.boundingBox();
+    const editorBounds = await page.locator(".capture-grid > .surface").boundingBox();
+    expect(catBounds!.x).toBeGreaterThan(editorBounds!.x + editorBounds!.width);
   }
   await capture(page, info, "capture");
   await page.getByRole("button", { name: "添加时段" }).click();
@@ -189,6 +195,7 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
   await expect(page.getByLabel("新计划 任务名称", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "删除新计划", exact: true }).click();
   await capture(page, info, "review");
+  await expect(page.locator(".review-aside").getByRole("img", { name: "陪伴你的小猫" })).toBeVisible();
   await page.getByRole("button", { name: "确认并开始" }).click();
   await expect(page.getByRole("heading", { name: "按现在的节奏继续" })).toBeVisible();
   const confirmed = calls.find((call) => call.method === "confirmPlan")!.input;
@@ -212,6 +219,7 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
   await expect(page.getByRole("button", { name: "暂停任务", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "暂停任务", exact: true }).click();
   await capture(page, info, "execute");
+  await expect(page.locator(".execute-aside").getByRole("img", { name: "陪伴你的小猫" })).toBeVisible();
   await page.getByRole("button", { name: "标记为已完成" }).click();
   await expect(page.locator(".focus-top h2")).toHaveText("回复客户邮件");
   await expect(page.locator(".timeline-item.done")).toContainText("准备周会演示");

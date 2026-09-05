@@ -85,7 +85,7 @@ async function boot(
       snoozeReminder: (input) => request("snoozeReminder", input),
       clearData: () => request("clearData"),
       onReminder: (callback) => {
-        const listener = () => callback({});
+        const listener = (event: Event) => callback((event as CustomEvent).detail ?? {});
         window.addEventListener("test-reminder", listener);
         return () => window.removeEventListener("test-reminder", listener);
       },
@@ -285,6 +285,14 @@ test("restores a confirmed plan, receives reminders and confirms replan only exp
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.evaluate(() => window.dispatchEvent(new Event("test-reminder")));
   await expect(page.getByRole("status")).toContainText("同步一下当前任务进度");
+  await expect(page.getByRole("alertdialog")).toContainText("需要同步进度");
+  await page.getByRole("button", { name: "关闭提醒" }).click();
+  await page.evaluate(() =>
+    window.dispatchEvent(new CustomEvent("test-reminder", { detail: { kind: "end" } })),
+  );
+  await expect(page.getByRole("alertdialog")).toContainText("任务结束提醒");
+  await expect(page.getByRole("alertdialog")).toContainText("实际完成情况");
+  await page.getByRole("button", { name: "关闭提醒" }).click();
   await page.getByRole("button", { name: "遇到阻碍", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();

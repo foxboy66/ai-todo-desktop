@@ -83,6 +83,13 @@ export function getCurrentMinutes(now = new Date()) {
   return now.getHours() * 60 + now.getMinutes();
 }
 
+export function formatReminderDueAt(day: Date, label: string) {
+  const [hours, minutes] = label.split(':').map(Number);
+  const dueAt = new Date(day);
+  dueAt.setHours(hours || 0, minutes || 0, 0, 0);
+  return dueAt.toISOString();
+}
+
 export function getScheduleSegments(task: Pick<ScheduledTask, 'scheduled' | 'startMinutes' | 'endMinutes' | 'segments'>): ScheduleSegment[] {
   if (task.segments?.length) return task.segments;
   if (task.scheduled && task.startMinutes !== null && task.endMinutes !== null) {

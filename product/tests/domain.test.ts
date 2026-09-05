@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildReminderNodes, buildSchedule, createDraftTask, formatScheduleLabel, getCheckpoints, getCurrentScheduledTask, getReminderInterval, getScheduleOverflowTasks, getSecondsUntilTaskEnd, isAvailabilityOpenAt, isTaskAvailableAt, parseTaskInput, reflowScheduleFromTask } from '../src/shared/domain';
+import { buildReminderNodes, buildSchedule, createDraftTask, formatReminderDueAt, formatScheduleLabel, getCheckpoints, getCurrentScheduledTask, getReminderInterval, getScheduleOverflowTasks, getSecondsUntilTaskEnd, isAvailabilityOpenAt, isTaskAvailableAt, parseTaskInput, reflowScheduleFromTask } from '../src/shared/domain';
 
 describe('AI ToDo 领域规则', () => {
   it('创建可编辑的新计划草稿', () => {
@@ -16,6 +16,17 @@ describe('AI ToDo 领域规则', () => {
     expect(getReminderInterval(31)).toBe(30);
     expect(getReminderInterval(120)).toBe(45);
     expect(getReminderInterval(181)).toBe(60);
+  });
+
+  it('把本地时钟标签转换为当前时区的真实时间点', () => {
+    const day = new Date(2026, 0, 1, 0, 0, 0);
+    const dueAt = new Date(formatReminderDueAt(day, '14:00'));
+
+    expect(dueAt.getFullYear()).toBe(2026);
+    expect(dueAt.getMonth()).toBe(0);
+    expect(dueAt.getDate()).toBe(1);
+    expect(dueAt.getHours()).toBe(14);
+    expect(dueAt.getMinutes()).toBe(0);
   });
 
   it('只生成结束前的检查点', () => {

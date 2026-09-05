@@ -67,6 +67,36 @@ function todayLabel() {
   }).format(new Date());
 }
 
+type ReminderAlert = {
+  kind: "start" | "checkpoint" | "end";
+  title: string;
+  body: string;
+};
+
+function playReminderTone(audioContextRef: { current: AudioContext | null }) {
+  try {
+    const AudioContextConstructor = window.AudioContext;
+    if (!AudioContextConstructor) return;
+    const context = audioContextRef.current ?? new AudioContextConstructor();
+    audioContextRef.current = context;
+    const startTime = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(880, startTime);
+    oscillator.frequency.setValueAtTime(660, startTime + 0.12);
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.14, startTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.38);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start(startTime);
+    oscillator.stop(startTime + 0.38);
+    void context.resume();
+  } catch {
+    // Electron's native system beep remains the fallback.
+  }
+}
+
 function CatFriend() {
   return (
     <figure className="cat-companion">
@@ -153,6 +183,8 @@ export function App() {
   }>({});
   const [blockerOpen, setBlockerOpen] = useState(false);
   const [customReason, setCustomReason] = useState("");
+  const [reminderAlert, setReminderAlert] = useState<ReminderAlert | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     void window.aiTodo
@@ -178,7 +210,26 @@ export function App() {
         }
       })
       .catch(() => setNotice("暂时无法读取本地计划，但仍可继续编辑。"));
-    return window.aiTodo.onReminder(() => setNotice("提醒：花半分钟同步一下当前任务进度。"));
+    return window.aiTodo.onReminder((reminder) => {
+      const reminderKind =
+        reminder && typeof reminder === "object" && "kind" in reminder ? reminder.kind : undefined;
+      const kind: ReminderAlert["kind"] =
+        reminderKind === "end" ? "end" : reminderKind === "start" ? "start" : "checkpoint";
+      const isEndReminder = kind === "end";
+      setReminderAlert({
+        kind,
+        title: isEndReminder ? "任务结束提醒" : kind === "start" ? "任务开始提醒" : "需要同步进度",
+        body: isEndReminder
+          ? "任务已经到达计划结束时间，记录一下实际完成情况。"
+          : kind === "start"
+            ? "任务已经到开始时间，先同步一下当前状态吧。"
+            : "已经到达进度同步时间，更新一下当前任务状态吧。",
+      });
+      setNotice(
+        isEndReminder ? "提醒：任务已到结束时间，请同步实际进展。" : "提醒：该同步一下当前任务进度了。",
+      );
+      playReminderTone(audioContextRef);
+    });
   }, []);
 
   useEffect(() => {
@@ -476,6 +527,33 @@ export function App() {
               </>
             )}
           </div>
+          {reminderAlert && (
+            <div
+              className={reminderAlert.kind === "end" ? "reminder-alert end" : "reminder-alert"}
+              role="alertdialog"
+              aria-live="assertive"
+              aria-label={reminderAlert.title}
+            >
+              <div className="reminder-alert-mark">
+                <BellRing size={18} />
+              </div>
+              <div className="reminder-alert-copy">
+                <span>AI ToDo · 及时提醒</span>
+                <strong>{reminderAlert.title}</strong>
+                <p>{reminderAlert.body}</p>
+              </div>
+              <button
+                className="reminder-alert-close"
+                aria-label="关闭提醒"
+                onClick={() => setReminderAlert(null)}
+              >
+                <X size={16} />
+              </button>
+              <button className="reminder-alert-confirm" onClick={() => setReminderAlert(null)}>
+                知道了
+              </button>
+            </div>
+          )}
           {view === "capture" && (
             <Capture
               tasks={tasks}

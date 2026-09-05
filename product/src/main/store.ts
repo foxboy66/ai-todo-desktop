@@ -1,5 +1,13 @@
 import Database from 'better-sqlite3';
+import { formatReminderDueAt } from '../shared/domain';
 import type { AvailabilityBlock, PlanSnapshot, ReminderNode, ScheduledTask, Task } from '../shared/domain';
+
+function localDayText(day: Date) {
+  const year = day.getFullYear();
+  const month = String(day.getMonth() + 1).padStart(2, '0');
+  const date = String(day.getDate()).padStart(2, '0');
+  return [year, month, date].join('-');
+}
 
 type StoredState = PlanSnapshot & { history: Array<{ version: number; createdAt: string; reason?: string }> };
 
@@ -38,7 +46,7 @@ export class TodoStore {
     };
   }
 
-  savePlan(tasks: Task[], availability: AvailabilityBlock[], schedule: ScheduledTask[], reason?: string) {
+  savePlan(tasks: Task[], availability: AvailabilityBlock[], schedule: ScheduledTask[], reason?: string, day = new Date()) {
     const save = this.db.transaction(() => {
       const existing = this.db.prepare('SELECT current_version FROM plans WHERE id = ?').get('today') as { current_version: number } | undefined;
       const version = (existing?.current_version ?? 0) + 1;
@@ -49,17 +57,16 @@ export class TodoStore {
       tasks.forEach((task) => insertTask.run(task.id, JSON.stringify(task)));
       const insertAvailability = this.db.prepare('INSERT INTO availability_windows (id, payload) VALUES (?, ?)');
       availability.forEach((block) => insertAvailability.run(block.id, JSON.stringify(block)));
-      this.db.prepare('INSERT INTO plans (id, day, current_version, status) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET current_version = excluded.current_version, status = excluded.status').run('today', new Date().toISOString().slice(0, 10), version, 'confirmed');
+      this.db.prepare('INSERT INTO plans (id, day, current_version, status) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET current_version = excluded.current_version, status = excluded.status').run('today', localDayText(day), version, 'confirmed');
       this.db.prepare('INSERT INTO plan_versions (id, plan_id, version_no, payload, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(`today-v${version}`, 'today', version, JSON.stringify({ schedule }), reason ?? null, new Date().toISOString());
       const insertReminder = this.db.prepare('INSERT INTO reminders (id, task_id, kind, due_at, status) VALUES (?, ?, ?, ?, ?)');
-      const dayText = new Date().toISOString().slice(0, 10);
       schedule.flatMap((task) => task.scheduled ? [
         { id: `reminder-${task.id}-start`, kind: 'start', dueAt: task.startLabel },
         ...task.checkpoints.map((label, index) => ({ id: `reminder-${task.id}-checkpoint-${index}`, kind: 'checkpoint', dueAt: label })),
         { id: `reminder-${task.id}-end`, kind: 'end', dueAt: task.endLabel },
       ] : []).forEach((reminder) => {
         const taskId = schedule.find((task) => reminder.id.includes(task.id))?.id;
-        insertReminder.run(reminder.id, taskId, reminder.kind, `${dayText}T${reminder.dueAt}:00`, 'pending');
+        insertReminder.run(reminder.id, taskId, reminder.kind, formatReminderDueAt(day, reminder.dueAt), 'pending');
       });
       return version;
     });
@@ -79,7 +86,11 @@ export class TodoStore {
   }
 
   snoozeReminder(id: string, minutes: number) {
-    this.db.prepare("UPDATE reminders SET due_at = datetime(due_at, ?) WHERE id = ? AND status = 'pending'").run(`+${minutes} minutes`, id);
+    const reminder = this.db.prepare("SELECT due_at as dueAt FROM reminders WHERE id = ? AND status = 'pending'").get(id) as { dueAt: string } | undefined;
+    if (!reminder) return;
+    const dueAt = new Date(reminder.dueAt);
+    dueAt.setMinutes(dueAt.getMinutes() + minutes);
+    this.db.prepare("UPDATE reminders SET due_at = ? WHERE id = ? AND status = 'pending'").run(dueAt.toISOString(), id);
   }
 
   clear() {

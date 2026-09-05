@@ -14,6 +14,18 @@ describe('AI ToDo 领域规则', () => {
     expect(getCheckpoints(14 * 60, 30)).toEqual([]);
   });
 
+  it('从当前时间开始安排，不把任务放回已经过去的时间', () => {
+    const task = parseTaskInput('回复客户邮件')[0];
+    const currentSchedule = buildSchedule([task], [{ id: 'morning', start: '09:00', end: '12:00', kind: 'available' }], 10 * 60 + 59);
+    expect(currentSchedule[0].startLabel).toBe('10:59');
+
+    const futureSchedule = buildSchedule([task], [
+      { id: 'morning', start: '09:00', end: '10:00', kind: 'available' },
+      { id: 'afternoon', start: '14:00', end: '15:00', kind: 'available' },
+    ], 13 * 60);
+    expect(futureSchedule[0].startLabel).toBe('14:00');
+  });
+
   it('不把任务安排进不可用时间，并保留未安排任务', () => {
     const tasks = parseTaskInput('准备评审；回复邮件；整理记录');
     const schedule = buildSchedule(tasks, [{ id: 'morning', start: '09:00', end: '10:00', kind: 'available' }, { id: 'afternoon', start: '14:00', end: '15:00', kind: 'available' }]);

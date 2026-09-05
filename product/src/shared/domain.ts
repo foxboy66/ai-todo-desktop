@@ -71,7 +71,11 @@ export function getCheckpoints(startMinutes: number, duration: number) {
   return checkpoints;
 }
 
-export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[]) {
+export function getCurrentMinutes(now = new Date()) {
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[], nowMinutes = getCurrentMinutes()) {
   const blocks = availability
     .filter((block) => block.kind !== 'busy')
     .map((block) => ({ ...block, startMinutes: parseTime(block.start), endMinutes: parseTime(block.end) }))
@@ -79,7 +83,7 @@ export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[]) 
     .sort((a, b) => a.startMinutes - b.startMinutes);
   const buffer = 15;
   let blockIndex = 0;
-  let cursor = blocks[0]?.startMinutes ?? 0;
+  let cursor = Math.max(blocks[0]?.startMinutes ?? 0, nowMinutes);
 
   return tasks.map((task): ScheduledTask => {
     let scheduled = false;
@@ -96,7 +100,7 @@ export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[]) 
         break;
       }
       blockIndex += 1;
-      cursor = blocks[blockIndex]?.startMinutes ?? 0;
+      cursor = Math.max(blocks[blockIndex]?.startMinutes ?? 0, nowMinutes);
     }
     return {
       ...task,

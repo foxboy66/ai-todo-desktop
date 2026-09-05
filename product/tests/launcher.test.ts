@@ -27,6 +27,9 @@ describe('Windows launcher', () => {
     expect(powershellText).toContain("$envConfig['DEEPSEEK_API_KEY']")
     expect(powershellText).toContain('（.env 未配置）')
     expect(powershellText).toContain('Invoke-RestMethod $healthUrl -TimeoutSec 1')
+    expect(powershellText).toContain('function Hide-LauncherConsole')
+    expect(powershellText).toContain("Start-Process -FilePath 'node.exe'")
+    expect(powershellText).toContain('-WindowStyle Hidden')
 
     const envExample = readFileSync(resolve(__dirname, '../.env.example'), 'utf8')
     expect(envExample).toContain('DEEPSEEK_API_KEY=')

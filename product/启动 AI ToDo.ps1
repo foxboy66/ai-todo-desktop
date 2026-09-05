@@ -1,6 +1,20 @@
 ﻿$ErrorActionPreference = 'Stop'
 $productRoot = $PSScriptRoot
 
+function Hide-LauncherConsole {
+  if (-not ('AiTodoConsoleWindow' -as [type])) {
+    Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class AiTodoConsoleWindow {
+  [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+}
+"@
+  }
+  $handle = [AiTodoConsoleWindow]::GetConsoleWindow()
+  if ($handle -ne [IntPtr]::Zero) { [void][AiTodoConsoleWindow]::ShowWindow($handle, 0) }
+}
 function Read-DotEnv([string]$Path) {
   $values = @{}
   if (-not (Test-Path -LiteralPath $Path)) { return $values }
@@ -79,7 +93,9 @@ $env:DEEPSEEK_BASE_URL = if ($envConfig['DEEPSEEK_BASE_URL']) { $envConfig['DEEP
 $env:DEEPSEEK_MODEL = if ($envConfig['DEEPSEEK_MODEL']) { $envConfig['DEEPSEEK_MODEL'] } else { 'deepseek-v4-flash' }
 $env:AI_GATEWAY_URL = if ($envConfig['AI_GATEWAY_URL']) { $envConfig['AI_GATEWAY_URL'] } else { 'http://127.0.0.1:8787' }
 $env:PORT = if ($envConfig['PORT']) { $envConfig['PORT'] } else { '8787' }
-$gateway = Start-Process -FilePath 'npm.cmd' -ArgumentList @('exec', 'tsx', 'gateway/src/index.ts') -WorkingDirectory $productRoot -PassThru -WindowStyle Minimized
+$tsxCli = Join-Path $productRoot 'gateway\node_modules\tsx\dist\cli.mjs'
+if (-not (Test-Path -LiteralPath $tsxCli)) { throw '未找到 AI 网关运行时，请重新启动项目以安装依赖。' }
+$gateway = Start-Process -FilePath 'node.exe' -ArgumentList @($tsxCli, 'gateway/src/index.ts') -WorkingDirectory $productRoot -PassThru -WindowStyle Hidden
 $healthUrl = "$($env:AI_GATEWAY_URL.TrimEnd('/'))/health"
 try {
   $ready = $false
@@ -92,6 +108,7 @@ try {
   }
   if (-not $ready) { throw 'AI 网关启动超时，请查看网关窗口。' }
   Write-Host 'AI 网关已启动，正在打开 AI ToDo…' -ForegroundColor Green
+  Hide-LauncherConsole
   Invoke-Npm @('start')
 } finally {
   if ($gateway -and -not $gateway.HasExited) { Stop-Process -Id $gateway.Id -Force -ErrorAction SilentlyContinue }

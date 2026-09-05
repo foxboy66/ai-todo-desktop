@@ -142,6 +142,7 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [version, setVersion] = useState(0);
   const [currentTaskId, setCurrentTaskId] = useState(starterTasks[0].id);
+  const [manuallySelectedTaskId, setManuallySelectedTaskId] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [isRunning, setIsRunning] = useState(false);
@@ -186,7 +187,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (view !== "execute") return;
+    if (view !== "execute" || manuallySelectedTaskId) return;
     const nextTask = getCurrentScheduledTask(schedule, now);
     const selectedTask = schedule.find((task) => task.id === currentTaskId);
     const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
@@ -198,7 +199,7 @@ export function App() {
       setCurrentTaskId(nextTask.id);
       setActiveTaskId(nextTask.id);
     }
-  }, [currentTaskId, now, schedule, view]);
+  }, [currentTaskId, manuallySelectedTaskId, now, schedule, view]);
 
   const currentTask =
     schedule.find((task) => task.id === currentTaskId) ??
@@ -223,6 +224,11 @@ export function App() {
           ? "这是草稿计划，确认后才会启动提醒。"
           : "计划已确认，按照当前节奏继续推进。",
     );
+  }
+
+  function selectTask(id: string) {
+    setCurrentTaskId(id);
+    setManuallySelectedTaskId(id);
   }
 
   async function generatePlan() {
@@ -252,6 +258,7 @@ export function App() {
     const firstTask = getCurrentScheduledTask(result.schedule, now);
     setCurrentTaskId(firstTask?.id ?? "");
     setActiveTaskId(firstTask?.id ?? null);
+    setManuallySelectedTaskId(null);
     setIsRunning(false);
     setView("execute");
     setNotice(`计划 v${result.version} 已确认，提醒节点已保存。`);
@@ -341,6 +348,7 @@ export function App() {
     if (next) {
       setCurrentTaskId(next.id);
       setActiveTaskId(next.id);
+      setManuallySelectedTaskId(null);
       setNotice(`“${currentTask.title}”已完成，下一项是“${next.title}”。`);
     } else {
       setActiveTaskId(null);
@@ -511,7 +519,7 @@ export function App() {
               isActiveTask={activeTaskId === currentTask.id}
               isRunning={isRunning}
               reminderInterval={reminderInterval}
-              onSelect={setCurrentTaskId}
+              onSelect={selectTask}
               onProgress={updateProgress}
               onComplete={completeTask}
               onToggleRunning={() => setIsRunning((running) => !running)}
@@ -1027,8 +1035,7 @@ function Execute({
                       ? "timeline-item done"
                       : "timeline-item"
                 }
-                onClick={() => task.scheduled && onSelect(task.id)}
-                disabled={!task.scheduled}
+                onClick={() => onSelect(task.id)}
               >
                 <span className="timeline-dot">
                   {task.status === "已完成" && <Check size={11} />}

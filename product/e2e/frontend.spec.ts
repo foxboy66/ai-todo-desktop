@@ -253,6 +253,9 @@ test("uses the current task end time for countdown after an earlier task has exp
   });
   await expect(page.locator(".focus-top h2")).toHaveText(tasks[1].title);
   await expect(page.getByRole("timer").locator("strong")).toHaveText("00:48:00");
+  await expect(page.locator(".timeline-item").nth(0)).toBeEnabled();
+  await page.locator(".timeline-item").nth(0).click();
+  await expect(page.locator(".focus-top h2")).toHaveText(tasks[0].title);
 });
 
 test("reflows following task times and warns when the new timeline exceeds availability", async ({ page }) => {

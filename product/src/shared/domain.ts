@@ -96,6 +96,12 @@ export function getScheduleSegments(task: Pick<ScheduledTask, 'scheduled' | 'sta
   return [];
 }
 
+export function isTaskAvailableAt(task: Pick<ScheduledTask, 'scheduled' | 'startMinutes' | 'endMinutes' | 'segments'>, now = new Date()) {
+  if (!task.scheduled) return false;
+  const nowMinutes = getCurrentMinutes(now) + now.getSeconds() / 60;
+  return getScheduleSegments(task).some((segment) => nowMinutes >= segment.startMinutes && nowMinutes < segment.endMinutes);
+}
+
 export function formatScheduleLabel(task: Pick<ScheduledTask, 'scheduled' | 'startMinutes' | 'endMinutes' | 'segments'>) {
   const segments = getScheduleSegments(task);
   return segments.length ? segments.map((segment) => `${segment.startLabel}–${segment.endLabel}`).join(' / ') : '未安排';

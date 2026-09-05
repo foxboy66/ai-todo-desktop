@@ -30,6 +30,9 @@ describe('Windows launcher', () => {
     expect(rendererApp).toContain('已同步进度')
     expect(rendererApp).toContain('Math.round(currentTask.duration * 60)')
     expect(rendererApp).not.toContain('currentTask.duration * 60 * (1 - progress / 100)')
+    expect(rendererApp).toContain('setActiveTaskId(firstTask?.id ?? null)')
+    expect(rendererApp).toContain('isTaskAvailableAt')
+    expect(rendererApp).not.toContain('setRunning')
     const viteConfig = readFileSync(resolve(__dirname, '../vite.config.ts'), 'utf8')
     expect(viteConfig).toContain("base: './'")
 

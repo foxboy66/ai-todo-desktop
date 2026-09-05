@@ -7,8 +7,6 @@ import {
   ChevronRight,
   CircleDot,
   Clock3,
-  Pause,
-  Play,
   Plus,
   RotateCcw,
   Settings2,
@@ -27,6 +25,7 @@ import {
   getCheckpoints,
   getReminderInterval,
   getScheduleSegments,
+  isTaskAvailableAt,
   parseTime,
   starterTasks,
   type AvailabilityBlock,
@@ -144,8 +143,9 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [version, setVersion] = useState(0);
   const [currentTaskId, setCurrentTaskId] = useState(starterTasks[0].id);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [elapsedSecondsByTask, setElapsedSecondsByTask] = useState<Record<string, number>>({});
   const [progress, setProgress] = useState<Record<string, number>>({});
-  const [running, setRunning] = useState(false);
   const [blocker, setBlocker] = useState<{
     reason?: string;
     suggestion?: { tasks: Task[]; schedule: ScheduledTask[] };
@@ -167,6 +167,11 @@ export function App() {
           setCurrentTaskId(
             state.tasks.find((task) => task.status !== "已完成")?.id ?? state.tasks[0].id,
           );
+          setActiveTaskId(
+            state.confirmed
+              ? state.schedule.find((task) => task.scheduled && task.status !== "已完成")?.id ?? null
+              : null,
+          );
           setView(state.confirmed ? "execute" : "review");
           setNotice(`已恢复本地计划 v${state.version}`);
         }
@@ -175,6 +180,24 @@ export function App() {
     return window.aiTodo.onReminder(() => setNotice("提醒：花半分钟同步一下当前任务进度。"));
   }, []);
 
+  useEffect(() => {
+    if (!activeTaskId) return undefined;
+    const tick = () => {
+      const activeTask = schedule.find((task) => task.id === activeTaskId);
+      if (!activeTask || activeTask.status === "已完成" || !isTaskAvailableAt(activeTask, new Date())) return;
+      setElapsedSecondsByTask((items) => {
+        const totalSeconds = Math.max(0, Math.round(activeTask.duration * 60));
+        const previousSeconds = items[activeTask.id] ?? 0;
+        const elapsedSeconds = Math.min(totalSeconds, previousSeconds + 1);
+        if (elapsedSeconds === previousSeconds) return items;
+        return { ...items, [activeTask.id]: elapsedSeconds };
+      });
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [activeTaskId, schedule]);
+
   const currentTask =
     schedule.find((task) => task.id === currentTaskId) ??
     schedule.find((task) => task.scheduled) ??
@@ -182,6 +205,14 @@ export function App() {
   const currentProgress = currentTask ? (progress[currentTask.id] ?? 0) : 0;
   const plannedMinutes = totalMinutes(tasks);
   const reminderInterval = currentTask ? getReminderInterval(currentTask.duration) : null;
+  const countdownTotalSeconds = currentTask ? Math.max(0, Math.round(currentTask.duration * 60)) : 0;
+  const countdownSeconds = currentTask
+    ? currentTask.status === "已完成"
+      ? 0
+      : activeTaskId === currentTask.id
+        ? Math.max(0, countdownTotalSeconds - (elapsedSecondsByTask[currentTask.id] ?? 0))
+        : countdownTotalSeconds
+    : 0;
 
   function setStep(next: View) {
     setView(next);
@@ -201,6 +232,8 @@ export function App() {
       setTasks(result.tasks);
       setSchedule(result.schedule);
       setCurrentTaskId(result.tasks[0]?.id ?? "");
+      setActiveTaskId(null);
+      setElapsedSecondsByTask({});
       setView("review");
       setNotice(`AI 已整理 ${result.tasks.length} 个任务，并生成参考计划。`);
     } catch {
@@ -217,6 +250,10 @@ export function App() {
     };
     setSchedule(result.schedule);
     setVersion(result.version);
+    const firstTask = result.schedule.find((task) => task.scheduled && task.status !== "已完成");
+    setCurrentTaskId(firstTask?.id ?? "");
+    setActiveTaskId(firstTask?.id ?? null);
+    setElapsedSecondsByTask({});
     setView("execute");
     setNotice(`计划 v${result.version} 已确认，提醒节点已保存。`);
   }
@@ -298,6 +335,10 @@ export function App() {
 
   function updateProgress(value: number) {
     if (!currentTask) return;
+    if (activeTaskId !== currentTask.id && currentTask.status !== "已完成") {
+      setNotice("请先完成当前执行中的任务，再同步后续任务进度。");
+      return;
+    }
     setProgress((items) => ({ ...items, [currentTask.id]: value }));
     void window.aiTodo.recordProgress({
       taskId: currentTask.id,
@@ -309,6 +350,10 @@ export function App() {
 
   function completeTask() {
     if (!currentTask) return;
+    if (activeTaskId !== currentTask.id) {
+      setNotice("请先完成当前执行中的任务，再进入后续任务。");
+      return;
+    }
     updateProgress(100);
     updateTask(currentTask.id, { status: "已完成" });
     const next = schedule.find(
@@ -316,8 +361,12 @@ export function App() {
     );
     if (next) {
       setCurrentTaskId(next.id);
+      setActiveTaskId(next.id);
       setNotice(`“${currentTask.title}”已完成，下一项是“${next.title}”。`);
-    } else setNotice("今天计划中的任务已全部完成。");
+    } else {
+      setActiveTaskId(null);
+      setNotice("今天计划中的任务已全部完成。");
+    }
   }
 
   async function chooseReason(reason: string) {
@@ -350,6 +399,8 @@ export function App() {
     setSchedule([]);
     setAvailability(defaultAvailability);
     setVersion(0);
+    setActiveTaskId(null);
+    setElapsedSecondsByTask({});
     setProgress({});
     setView("capture");
     setNotice("本地数据已删除。");
@@ -476,12 +527,13 @@ export function App() {
               schedule={schedule}
               currentTask={currentTask}
               progress={currentProgress}
-              running={running}
+              countdownSeconds={countdownSeconds}
+              countdownTotalSeconds={countdownTotalSeconds}
+              isActiveTask={activeTaskId === currentTask.id}
               reminderInterval={reminderInterval}
               onSelect={setCurrentTaskId}
               onProgress={updateProgress}
               onComplete={completeTask}
-              onToggle={() => setRunning((value) => !value)}
               onBlocker={() => {
                 setBlocker({});
                 setCustomReason("");
@@ -929,43 +981,33 @@ function Execute({
   schedule,
   currentTask,
   progress,
-  running,
+  countdownSeconds,
+  countdownTotalSeconds,
+  isActiveTask,
   reminderInterval,
   onSelect,
   onProgress,
   onComplete,
-  onToggle,
   onBlocker,
   onReview,
 }: {
   schedule: ScheduledTask[];
   currentTask: ScheduledTask;
   progress: number;
-  running: boolean;
+  countdownSeconds: number;
+  countdownTotalSeconds: number;
+  isActiveTask: boolean;
   reminderInterval: number | null;
   onSelect: (id: string) => void;
   onProgress: (value: number) => void;
   onComplete: () => void;
-  onToggle: () => void;
   onBlocker: () => void;
   onReview: () => void;
 }) {
   const upcoming = schedule
     .filter((task) => task.id !== currentTask.id && task.scheduled && task.status !== "已完成")
     .slice(0, 3);
-  const initialCountdownSeconds = Math.max(0, Math.round(currentTask.duration * 60));
-  const [countdownSeconds, setCountdownSeconds] = useState(initialCountdownSeconds);
-  useEffect(() => {
-    setCountdownSeconds(initialCountdownSeconds);
-  }, [currentTask.id, currentTask.duration, initialCountdownSeconds]);
-  useEffect(() => {
-    if (!running || countdownSeconds <= 0) return undefined;
-    const timer = window.setInterval(() => {
-      setCountdownSeconds((value) => Math.max(0, value - 1));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [running, currentTask.id, countdownSeconds <= 0]);
-  const countdownProgress = initialCountdownSeconds > 0 ? countdownSeconds / initialCountdownSeconds : 0;
+  const countdownProgress = countdownTotalSeconds > 0 ? countdownSeconds / countdownTotalSeconds : 0;
   return (
     <section>
       <div className="heading-row">
@@ -1024,7 +1066,7 @@ function Execute({
               <div>
                 <span className="focus-kicker">
                   <CircleDot size={14} />
-                  正在执行
+                  {isActiveTask ? "正在执行" : currentTask.status === "已完成" ? "已完成" : "等待前置任务"}
                 </span>
                 <h2>{currentTask.title}</h2>
                 <p>完成标准：{currentTask.doneDefinition}</p>
@@ -1059,7 +1101,7 @@ function Execute({
               >
                 <div>
                   <strong>{countdownLabel(countdownSeconds)}</strong>
-                  <small>任务倒计时</small>
+                  <small>{isActiveTask ? "任务倒计时" : currentTask.status === "已完成" ? "任务已完成" : "等待前置任务"}</small>
                 </div>
               </div>
             </div>
@@ -1096,10 +1138,6 @@ function Execute({
               <button className="primary light" onClick={onComplete}>
                 <Check size={17} />
                 标记为已完成
-              </button>
-              <button className="secondary dark" onClick={onToggle}>
-                {running ? <Pause size={16} /> : <Play size={16} />}
-                {running ? "暂停任务" : "继续任务"}
               </button>
             </div>
           </div>

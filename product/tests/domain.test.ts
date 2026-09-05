@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildReminderNodes, buildSchedule, createDraftTask, formatScheduleLabel, getCheckpoints, getReminderInterval, parseTaskInput } from '../src/shared/domain';
+import { buildReminderNodes, buildSchedule, createDraftTask, formatScheduleLabel, getCheckpoints, getReminderInterval, isTaskAvailableAt, parseTaskInput } from '../src/shared/domain';
 
 describe('AI ToDo 领域规则', () => {
   it('创建可编辑的新计划草稿', () => {
@@ -48,6 +48,9 @@ describe('AI ToDo 领域规则', () => {
       { startMinutes: 14 * 60, endMinutes: 14 * 60 + 30, startLabel: '14:00', endLabel: '14:30' },
     ]);
     expect(formatScheduleLabel(scheduled)).toBe('11:00–12:00 / 14:00–14:30');
+    expect(isTaskAvailableAt(scheduled, new Date(2026, 0, 1, 11, 30, 0))).toBe(true);
+    expect(isTaskAvailableAt(scheduled, new Date(2026, 0, 1, 12, 30, 0))).toBe(false);
+    expect(isTaskAvailableAt(scheduled, new Date(2026, 0, 1, 14, 0, 0))).toBe(true);
     expect(scheduled.checkpoints).toEqual(['11:30', '14:00']);
     const reminders = buildReminderNodes(schedule, new Date(2026, 0, 1));
     expect(reminders.map((reminder) => reminder.dueAt)).toEqual([

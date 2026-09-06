@@ -355,9 +355,14 @@ test("segmented and unscheduled tasks remain editable without hidden time contro
   await expect(page.getByLabel("回复客户邮件 结束时间")).toHaveValue("20:00");
   await page.getByLabel("回复客户邮件 结束时间").fill("20:15");
   await expect(page.getByLabel("回复客户邮件 预计耗时（分钟）")).toHaveValue("75");
+  await page.getByLabel("回复客户邮件 结束时间").fill("19:05");
+  await expect(page.getByLabel("回复客户邮件 预计耗时（分钟）")).toHaveValue("5");
   await assertLayout(page);
   await page.getByLabel("回复客户邮件 结束时间").fill("18:00");
   await expect(page.getByRole("status")).toContainText("结束时间需要晚于开始时间");
+  const shortDuration = page.getByLabel("完成 MVP Demo 交互 预计耗时（分钟）");
+  await shortDuration.fill("5");
+  await expect(shortDuration).toHaveValue("5");
 });
 
 test("empty states, deletion and the last availability safeguard stay usable", async ({ page }) => {

@@ -365,7 +365,7 @@ export function App() {
       setNotice("结束时间需要晚于开始时间。");
       return;
     }
-    const duration = field === "end" ? Math.max(15, endMinutes - startMinutes) : current.duration;
+    const duration = field === "end" ? endMinutes - startMinutes : current.duration;
     const nextSchedule = reflowScheduleFromTask(schedule, id, startMinutes, duration);
     if (field === "end") {
       setTasks((items) => items.map((task) => (task.id === id ? { ...task, duration } : task)));
@@ -1011,13 +1011,13 @@ function Review({
               <div className="task-actions">
                 <input
                   type="number"
-                  min="15"
+                  min="1"
                   step="5"
                   value={task.duration}
                   aria-label={`${task.title} 预计耗时（分钟）`}
                   onChange={(event) =>
                     onUpdateTask(task.id, {
-                      duration: Math.max(15, Number(event.target.value) || 15),
+                      duration: Math.max(1, Number(event.target.value) || 1),
                     })
                   }
                 />

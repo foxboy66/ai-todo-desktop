@@ -46,9 +46,13 @@ export class TodoStore {
     const availabilityRows = this.db.prepare('SELECT payload FROM availability_windows ORDER BY rowid').all() as Array<{ payload: string }>;
     const plan = this.db.prepare('SELECT current_version, status FROM plans WHERE id = ?').get('today') as { current_version: number; status: string } | undefined;
     const version = plan?.current_version ?? 0;
-    const versionRow = version ? this.db.prepare('SELECT payload FROM plan_versions WHERE plan_id = ? AND version_no = ?').get('today', version) as { payload: string } | undefined : undefined;
+    const versionRow = plan?.status === 'draft'
+      ? this.db.prepare('SELECT payload FROM plan_versions WHERE plan_id = ? AND version_no = 0').get('today') as { payload: string } | undefined
+      : version
+        ? this.db.prepare('SELECT payload FROM plan_versions WHERE plan_id = ? AND version_no = ?').get('today', version) as { payload: string } | undefined
+        : undefined;
     const payload = versionRow ? JSON.parse(versionRow.payload) as { schedule: ScheduledTask[] } : undefined;
-    const historyRows = this.db.prepare('SELECT version_no, created_at, reason FROM plan_versions WHERE plan_id = ? ORDER BY version_no DESC').all('today') as Array<{ version_no: number; created_at: string; reason?: string }>;
+    const historyRows = this.db.prepare('SELECT version_no, created_at, reason FROM plan_versions WHERE plan_id = ? AND version_no > 0 ORDER BY version_no DESC').all('today') as Array<{ version_no: number; created_at: string; reason?: string }>;
     return {
       tasks: taskRows.map((row) => JSON.parse(row.payload) as Task),
       availability: availabilityRows.map((row) => JSON.parse(row.payload) as AvailabilityBlock),
@@ -71,6 +75,7 @@ export class TodoStore {
       const insertAvailability = this.db.prepare('INSERT INTO availability_windows (id, payload) VALUES (?, ?)');
       availability.forEach((block) => insertAvailability.run(block.id, JSON.stringify(block)));
       this.db.prepare('INSERT INTO plans (id, day, current_version, status) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET current_version = excluded.current_version, status = excluded.status').run('today', localDayText(day), version, 'confirmed');
+      this.db.prepare('DELETE FROM plan_versions WHERE id = ?').run('today-draft');
       this.db.prepare('INSERT INTO plan_versions (id, plan_id, version_no, payload, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(`today-v${version}`, 'today', version, JSON.stringify({ schedule }), reason ?? null, new Date().toISOString());
       const insertReminder = this.db.prepare('INSERT INTO reminders (id, task_id, kind, due_at, status) VALUES (?, ?, ?, ?, ?)');
       schedule.flatMap((task) => task.scheduled ? [
@@ -84,6 +89,24 @@ export class TodoStore {
       return version;
     });
     return save();
+  }
+
+  saveDraft(tasks: Task[], availability: AvailabilityBlock[], schedule: ScheduledTask[], day = new Date()) {
+    const save = this.db.transaction(() => {
+      const existing = this.db.prepare('SELECT current_version FROM plans WHERE id = ?').get('today') as { current_version: number } | undefined;
+      const version = existing?.current_version ?? 0;
+      this.db.prepare('DELETE FROM tasks').run();
+      this.db.prepare('DELETE FROM availability_windows').run();
+      this.db.prepare('DELETE FROM reminders').run();
+      const insertTask = this.db.prepare('INSERT INTO tasks (id, payload) VALUES (?, ?)');
+      tasks.forEach((task) => insertTask.run(task.id, JSON.stringify(task)));
+      const insertAvailability = this.db.prepare('INSERT INTO availability_windows (id, payload) VALUES (?, ?)');
+      availability.forEach((block) => insertAvailability.run(block.id, JSON.stringify(block)));
+      this.db.prepare('INSERT INTO plans (id, day, current_version, status) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET day = excluded.day, current_version = excluded.current_version, status = excluded.status').run('today', localDayText(day), version, 'draft');
+      this.db.prepare('INSERT INTO plan_versions (id, plan_id, version_no, payload, reason, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, created_at = excluded.created_at').run('today-draft', 'today', 0, JSON.stringify({ schedule }), null, new Date().toISOString());
+    });
+    save();
+    return this.load();
   }
 
   recordProgress(taskId: string, eventType: string, payload: Record<string, unknown> = {}) {

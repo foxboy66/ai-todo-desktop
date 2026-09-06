@@ -4,6 +4,7 @@ import type { AvailabilityBlock, PlanSnapshot, ScheduledTask, Task } from './sha
 const api = {
   load: () => ipcRenderer.invoke('app:load') as Promise<PlanSnapshot & { history: Array<{ version: number; createdAt: string; reason?: string }> }>,
   generatePlan: (input: { rawText: string; availability: AvailabilityBlock[] }) => ipcRenderer.invoke('plan:generate', input) as Promise<{ tasks: Task[]; schedule: ScheduledTask[] }>,
+  saveDraft: (input: { tasks: Task[]; availability: AvailabilityBlock[]; schedule: ScheduledTask[] }) => ipcRenderer.invoke('plan:save-draft', input),
   confirmPlan: (input: { tasks: Task[]; availability: AvailabilityBlock[]; schedule: ScheduledTask[]; reason?: string }) => ipcRenderer.invoke('plan:confirm', input),
   recordProgress: (input: { taskId: string; eventType: string; payload?: Record<string, unknown> }) => ipcRenderer.invoke('progress:record', input),
   suggestReplan: (input: { tasks: Task[]; availability: AvailabilityBlock[]; currentTaskId: string; reason: string }) => ipcRenderer.invoke('replan:suggest', input) as Promise<{ tasks: Task[]; schedule: ScheduledTask[]; reason: string }>,

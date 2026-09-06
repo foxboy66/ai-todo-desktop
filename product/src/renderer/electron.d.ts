@@ -5,6 +5,7 @@ declare global {
     aiTodo: {
       load: () => Promise<PlanSnapshot & { history: Array<{ version: number; createdAt: string; reason?: string }> }>;
       generatePlan: (input: { rawText: string; availability: AvailabilityBlock[] }) => Promise<{ tasks: Task[]; schedule: ScheduledTask[] }>;
+      saveDraft: (input: { tasks: Task[]; availability: AvailabilityBlock[]; schedule: ScheduledTask[] }) => Promise<PlanSnapshot>;
       confirmPlan: (input: { tasks: Task[]; availability: AvailabilityBlock[]; schedule: ScheduledTask[]; reason?: string }) => Promise<PlanSnapshot>;
       recordProgress: (input: { taskId: string; eventType: string; payload?: Record<string, unknown> }) => Promise<void>;
       suggestReplan: (input: { tasks: Task[]; availability: AvailabilityBlock[]; currentTaskId: string; reason: string }) => Promise<{ tasks: Task[]; schedule: ScheduledTask[]; reason: string }>;

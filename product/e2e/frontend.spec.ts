@@ -47,6 +47,16 @@ async function boot(
         result = { tasks, schedule: buildSchedule(tasks, input.availability, 480) };
         break;
       }
+      case "saveDraft":
+        snapshot = {
+          tasks: structuredClone(input.tasks),
+          availability: structuredClone(input.availability),
+          schedule: structuredClone(input.schedule),
+          version: snapshot.version,
+          confirmed: false,
+        };
+        result = snapshot;
+        break;
       case "confirmPlan":
         snapshot = { ...input, version: snapshot.version + 1, confirmed: true } as PlanSnapshot;
         result = snapshot;
@@ -79,6 +89,7 @@ async function boot(
     window.aiTodo = {
       load: () => request("load"),
       generatePlan: (input) => request("generatePlan", input),
+      saveDraft: (input) => request("saveDraft", input),
       confirmPlan: (input) => request("confirmPlan", input),
       suggestReplan: (input) => request("suggestReplan", input),
       recordProgress: (input) => request("recordProgress", input),
@@ -281,15 +292,19 @@ test("reflows following task times and warns when the new timeline exceeds avail
   }));
   const availability = [{ id: "morning", start: "09:00", end: "11:00", kind: "available" as const }];
   const schedule = buildSchedule(tasks, [{ id: "morning", start: "09:00", end: "18:00", kind: "available" }], 9 * 60);
-  await boot(page, {
+  const { calls } = await boot(page, {
     state: { tasks, schedule, availability, version: 1, confirmed: false },
   });
   await page.getByLabel(tasks[1].title + " 结束时间", { exact: true }).fill("12:00");
   await expect(page.getByLabel(tasks[2].title + " 开始时间", { exact: true })).toHaveValue("12:00");
+  await expect.poll(() => calls.filter((call) => call.method === "saveDraft").length).toBeGreaterThan(0);
   await page.getByLabel(tasks[1].title + " 结束时间", { exact: true }).fill("17:30");
   await expect(page.getByLabel(tasks[2].title + " 开始时间", { exact: true })).toHaveValue("17:30");
   await expect(page.getByRole("status")).toContainText("超出今日可用时段");
   await expect(page.getByText("2 项任务超出今日可用时段", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "这份安排合适吗？" })).toBeVisible();
+  await expect(page.getByLabel(tasks[1].title + " 结束时间", { exact: true })).toHaveValue("17:30");
 });
 
 test("restores a confirmed plan, receives reminders and confirms replan only explicitly", async ({

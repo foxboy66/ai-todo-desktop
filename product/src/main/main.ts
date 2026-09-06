@@ -27,6 +27,9 @@ function registerIpc() {
     const tasks = await parseTasksWithGateway(input.rawText);
     return { tasks, schedule: buildSchedule(tasks, input.availability) };
   });
+  ipcMain.handle('plan:save-draft', (_event, input: { tasks: Task[]; availability: AvailabilityBlock[]; schedule: ScheduledTask[] }) => {
+    return store.saveDraft(input.tasks, input.availability, input.schedule);
+  });
   ipcMain.handle('plan:confirm', (_event, input: { tasks: Task[]; availability: AvailabilityBlock[]; schedule: ScheduledTask[]; reason?: string }) => {
     const schedule = input.schedule ?? buildSchedule(input.tasks, input.availability);
     const version = store.savePlan(input.tasks, input.availability, schedule, input.reason);

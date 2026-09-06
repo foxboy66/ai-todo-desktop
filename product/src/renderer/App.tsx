@@ -300,17 +300,32 @@ export function App() {
     setPausedCountdownSeconds(null);
   }
 
+  function persistDraft(
+    draftTasks: Task[],
+    draftAvailability: AvailabilityBlock[],
+    draftSchedule: ScheduledTask[],
+  ) {
+    void window.aiTodo
+      .saveDraft({
+        tasks: draftTasks,
+        availability: draftAvailability,
+        schedule: draftSchedule,
+      })
+      .catch(() => setNotice("本地草稿保存失败，请检查后重试。"));
+  }
+
   async function generatePlan() {
     setLoading(true);
     try {
       const result = await window.aiTodo.generatePlan({ rawText: taskInput, availability });
+      persistDraft(result.tasks, availability, result.schedule);
       setTasks(result.tasks);
       setSchedule(result.schedule);
       setCurrentTaskId(result.tasks[0]?.id ?? "");
       setActiveTaskId(null);
       setPausedCountdownSeconds(null);
       setView("review");
-      setNotice(`AI 已整理 ${result.tasks.length} 个任务，并生成参考计划。`);
+      setNotice(`AI 已整理 ${result.tasks.length} 个任务，并保存为本地草稿。`);
     } catch {
       setNotice("生成计划失败，请检查连接后重试。输入的任务仍然保留。");
     } finally {
@@ -337,19 +352,29 @@ export function App() {
 
   function updateTask(id: string, patch: Partial<Task>) {
     const nextTasks = tasks.map((task) => (task.id === id ? { ...task, ...patch } : task));
+    const nextSchedule =
+      patch.duration !== undefined
+        ? buildSchedule(nextTasks, availability)
+        : schedule.map((task) => (task.id === id ? { ...task, ...patch } : task));
     setTasks(nextTasks);
-    if (patch.duration !== undefined) {
-      setSchedule(buildSchedule(nextTasks, availability));
-    } else {
-      setSchedule((items) => items.map((task) => (task.id === id ? { ...task, ...patch } : task)));
-    }
+    setSchedule(nextSchedule);
+    persistDraft(nextTasks, availability, nextSchedule);
   }
   function addTask() {
     const task = createDraftTask(tasks.length);
     const nextTasks = [...tasks, task];
+    const nextSchedule = buildSchedule(nextTasks, availability);
     setTasks(nextTasks);
-    setSchedule(buildSchedule(nextTasks, availability));
-    setNotice("已添加新计划，请补充任务名称、完成标准、优先级和耗时。");
+    setSchedule(nextSchedule);
+    persistDraft(nextTasks, availability, nextSchedule);
+    setNotice("已添加新计划并保存草稿，请补充任务名称、完成标准、优先级和耗时。");
+  }
+  function removeTask(id: string) {
+    const nextTasks = tasks.filter((task) => task.id !== id);
+    const nextSchedule = schedule.filter((task) => task.id !== id);
+    setTasks(nextTasks);
+    setSchedule(nextSchedule);
+    persistDraft(nextTasks, availability, nextSchedule);
   }
   function updateTime(id: string, field: "start" | "end", value: string) {
     const current = schedule.find((task) => task.id === id);
@@ -367,27 +392,34 @@ export function App() {
     }
     const duration = field === "end" ? endMinutes - startMinutes : current.duration;
     const nextSchedule = reflowScheduleFromTask(schedule, id, startMinutes, duration);
-    if (field === "end") {
-      setTasks((items) => items.map((task) => (task.id === id ? { ...task, duration } : task)));
-    }
+    const nextTasks =
+      field === "end"
+        ? tasks.map((task) => (task.id === id ? { ...task, duration } : task))
+        : tasks;
+    if (field === "end") setTasks(nextTasks);
     setSchedule(nextSchedule);
+    persistDraft(nextTasks, availability, nextSchedule);
     const overflowTasks = getScheduleOverflowTasks(nextSchedule, availability);
     setNotice(
       overflowTasks.length
-        ? "已修改任务时间，后续 " + overflowTasks.length + " 项已按耗时继续安排，但结束时间超出今日可用时段。"
-        : "已修改任务时间，后续任务已顺延，确认计划后才会正式应用。",
+        ? "已修改任务时间并保存草稿，后续 " + overflowTasks.length + " 项已按耗时继续安排，但结束时间超出今日可用时段。"
+        : "已修改任务时间并保存草稿，后续任务已顺延；确认后才会启动提醒。",
     );
   }
   function addAvailability() {
-    setAvailability((items) => [
-      ...items,
-      { id: `slot-${Date.now()}`, start: "19:00", end: "20:00", kind: "available" },
-    ]);
+    const nextAvailability = [
+      ...availability,
+      { id: `slot-${Date.now()}`, start: "19:00", end: "20:00", kind: "available" as const },
+    ];
+    setAvailability(nextAvailability);
+    if (view === "review") persistDraft(tasks, nextAvailability, schedule);
   }
   function updateAvailability(id: string, field: "start" | "end", value: string) {
-    setAvailability((items) =>
-      items.map((slot) => (slot.id === id ? { ...slot, [field]: value } : slot)),
+    const nextAvailability = availability.map((slot) =>
+      slot.id === id ? { ...slot, [field]: value } : slot,
     );
+    setAvailability(nextAvailability);
+    if (view === "review") persistDraft(tasks, nextAvailability, schedule);
   }
 
   function updateProgress(value: number) {
@@ -412,7 +444,14 @@ export function App() {
       return;
     }
     updateProgress(100);
-    updateTask(currentTask.id, { status: "已完成" });
+    const completedTasks = tasks.map((task) =>
+      task.id === currentTask.id ? { ...task, status: "已完成" as const } : task,
+    );
+    const completedSchedule = schedule.map((task) =>
+      task.id === currentTask.id ? { ...task, status: "已完成" as const } : task,
+    );
+    setTasks(completedTasks);
+    setSchedule(completedSchedule);
     const next = getNextPendingTask(schedule, currentTask.id);
     setActiveTaskId(null);
     setIsRunning(false);
@@ -451,6 +490,7 @@ export function App() {
 
   async function applyReplan() {
     if (!blocker.suggestion) return;
+    persistDraft(blocker.suggestion.tasks, availability, blocker.suggestion.schedule);
     setTasks(blocker.suggestion.tasks);
     setSchedule(blocker.suggestion.schedule);
 
@@ -609,10 +649,7 @@ export function App() {
               onUpdateTask={updateTask}
               onAddTask={addTask}
               onUpdateTime={updateTime}
-              onRemoveTask={(id) => {
-                setTasks((items) => items.filter((task) => task.id !== id));
-                setSchedule((items) => items.filter((task) => task.id !== id));
-              }}
+              onRemoveTask={removeTask}
               onConfirm={() => void confirmPlan()}
               onBack={() => setStep("capture")}
             />
@@ -1069,7 +1106,7 @@ function Review({
                   ? "可以减少耗时、增加可用时段，或确认后稍后处理。"
                   : overflowTasks.length
                     ? "已按任务耗时继续往后排，请确认是否接受今天可用时段之外的执行时间。"
-                    : "确认计划后才会创建和启动提醒节点。"}
+                    : "修改会自动保存为本地草稿，确认后才会创建和启动提醒节点。"}
               </p>
             </div>
           </div>

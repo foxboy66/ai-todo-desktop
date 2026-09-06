@@ -94,12 +94,39 @@ const root = path.resolve(__dirname, '..');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
     assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isDestroyed()), false);
     assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show());
+    const clickTray = () => app.evaluate(({ app }) => {
+      const load = process.getBuiltinModule('module').createRequire(app.getAppPath() + '/package.json');
+      const main = load('./dist/main/main.js');
+      main.tray.emit('click');
+    });
+    const waitForRestoredWindow = async () => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const restored = await app.evaluate(({ BrowserWindow }) => {
+          const window = BrowserWindow.getAllWindows()[0];
+          return window.isVisible() && !window.isMinimized() && window.isFocused();
+        });
+        if (restored) return;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      assert.fail('A tray single-click must restore and focus the existing window');
+    };
+    await clickTray();
+    await waitForRestoredWindow();
+    await app.evaluate(async ({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      const minimized = new Promise(resolve => window.once('minimize', resolve));
+      window.minimize();
+      await minimized;
+      window.hide();
+    });
+    await clickTray();
+    await waitForRestoredWindow();
+    assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
     await page.evaluate(() => window.aiTodo.clearData());
     assert.equal((await page.evaluate(() => window.aiTodo.load())).tasks.length, 0);
     assert.equal((await page.evaluate(() => window.aiTodo.getAiSettings())).hasApiKey, false);
     assert.deepEqual(errors, []);
-    console.log('PASS: packaged launch, real SQLite/IPC, offline 30 minutes, encrypted settings, restart, tray and clear data');
+    console.log('PASS: packaged launch, real SQLite/IPC, offline 30 minutes, encrypted settings, restart, tray single-click restore/focus and clear data');
   } finally {
     if (app) await app.close();
     await fs.rm(profile, { recursive: true, force: true });

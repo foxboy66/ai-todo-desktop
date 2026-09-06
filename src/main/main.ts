@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, Menu, Notification, nativeImage, safeStorage, Tray } from 'electron';
+import { app, BrowserWindow, ipcMain, Notification, safeStorage, type Tray } from 'electron';
 import { join } from 'node:path';
 import { createWindowStartup } from './window-startup';
+import { createAppTray, restoreMainWindow } from './tray';
 import { buildSchedule, replanTasks, type AvailabilityBlock, type ScheduledTask, type Task } from '../shared/domain';
 import { estimateTasks } from './ai-gateway';
 import { AiSettingsStore } from './ai-settings';
@@ -91,19 +92,16 @@ if (hasInstanceLock) app.whenReady().then(() => {
   aiSettings = new AiSettingsStore(join(app.getPath('userData'), 'ai-settings.json'), safeStorage);
   registerIpc();
   const window = createWindow();
-  tray = new Tray(nativeImage.createFromPath(join(__dirname, '../renderer/icon.png')).resize({ width: 16, height: 16 }));
-  tray.setToolTip('AI ToDo');
-  tray.setContextMenu(Menu.buildFromTemplate([{ label: '打开 AI ToDo', click: () => window.show() }, { label: '退出', click: () => app.quit() }]));
-  tray.on('double-click', () => window.show());
-  app.on('second-instance', () => { window.show(); window.focus(); });
+  tray = createAppTray(window, join(__dirname, '../renderer/icon.png'), () => app.quit());
+  app.on('second-instance', () => restoreMainWindow(window));
   scheduler = new ReminderScheduler(store, window);
   scheduler.start();
   app.on('before-quit', () => { quitting = true; scheduler.stop(); store.close(); });
-  app.on('activate', () => window.show());
+  app.on('activate', () => restoreMainWindow(window));
 });
 
 app.on('window-all-closed', () => {
   // Keep the tray application alive when the main window closes.
 });
 
-export { Notification };
+export { Notification, tray };

@@ -228,6 +228,8 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
   await expect(page.locator("main .cat-friend")).toHaveCount(0);
   await page.getByRole("button", { name: "确认并开始" }).click();
   await expect(page.getByRole("heading", { name: "按现在的节奏继续" })).toBeVisible();
+  await expect(page.getByRole('timer').locator('small')).toHaveText('任务倒计时');
+  await expect(page.getByRole('button', { name: '暂停任务', exact: true })).toBeVisible();
   const confirmed = calls.find((call) => call.method === "confirmPlan")!.input;
   expect(confirmed.tasks[0]).toMatchObject({
     title: "准备周会演示",
@@ -249,15 +251,16 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
     .toBe(true);
   const countdown = page.getByRole("timer").locator("strong");
   await expect(countdown).toHaveText("00:30:00");
-  await page.getByRole("button", { name: "继续任务", exact: true }).click();
   await expect(page.getByRole("button", { name: "暂停任务", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "暂停任务", exact: true }).click();
+  await expect(page.getByRole("timer").locator("small")).toHaveText("倒计时已暂停");
   await expect(page.getByRole("button", { name: "继续任务", exact: true })).toBeVisible();
   await page.clock.setFixedTime(new Date("2026-09-05T09:10:00+08:00"));
   await page.waitForTimeout(1100);
   await expect(countdown).toHaveText("00:30:00");
   await page.getByRole("button", { name: "继续任务", exact: true }).click();
   await expect(countdown).toHaveText("00:20:00");
+  await expect(page.getByRole("timer").locator("small")).toHaveText("任务倒计时");
   await capture(page, info, "execute");
   await expect(page.locator(".sidebar .cat-friend")).toHaveCount(1);
   await expect(page.locator("main .cat-friend")).toHaveCount(0);
@@ -289,6 +292,7 @@ test("uses the current task end time for countdown after an earlier task has exp
   });
   await expect(page.locator(".focus-top h2")).toHaveText(tasks[1].title);
   await expect(page.getByRole("timer").locator("strong")).toHaveText("00:33:00");
+  await expect(page.getByRole("timer").locator("small")).toHaveText("任务倒计时");
   await expect(page.locator(".timeline-item").nth(0)).toBeEnabled();
   await page.locator(".timeline-item").nth(0).click();
   await expect(page.locator(".focus-top h2")).toHaveText(tasks[0].title);
@@ -440,7 +444,7 @@ test("long titles and extra availability do not overflow the page", async ({ pag
 test('defaults to local mode and saves optional AI settings without revealing keys', async ({ page }) => {
   const { calls, errors } = await boot(page);
   await expect(page.locator('.preview-items > div')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '大模型设置', exact: true })).toHaveText('本地模式');
+  await expect(page.locator('.top-actions .local-pill')).toHaveText('本地模式');
   await page.getByLabel('今天想完成什么？').fill('写报告；准备会议');
   await page.getByRole('button', { name: '生成参考计划' }).click();
   await expect(page.getByLabel('写报告 预计耗时（分钟）')).toHaveValue('30');
@@ -453,14 +457,14 @@ test('defaults to local mode and saves optional AI settings without revealing ke
   await page.getByLabel('API Key', { exact: true }).fill('test-only-key');
   await page.getByRole('button', { name: '保存设置' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '大模型设置', exact: true })).toHaveText('大模型估时');
+  await expect(page.locator('.top-actions .local-pill')).toHaveText('大模型估时');
   await page.reload();
   await page.getByRole('button', { name: '大模型设置', exact: true }).click();
   await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
   await page.getByLabel('不使用大模型', { exact: true }).check();
   await expect(page.getByLabel('API Key', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '保存设置' }).click();
-  await expect(page.getByRole('button', { name: '大模型设置', exact: true })).toHaveText('本地模式');
+  await expect(page.locator('.top-actions .local-pill')).toHaveText('本地模式');
   await expect(page.getByLabel('写报告 预计耗时（分钟）')).toHaveValue('30');
   expect(errors).toEqual([]);
 });
@@ -496,7 +500,7 @@ test('first launch supports opting into AI and requires a key before continuing'
   await page.getByLabel('API Key', { exact: true }).fill('first-run-test-key');
   await page.getByRole('button', { name: '开始使用', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '大模型设置', exact: true })).toHaveText('大模型估时');
+  await expect(page.locator('.top-actions .local-pill')).toHaveText('大模型估时');
   await page.reload();
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -510,4 +514,32 @@ test('failed first-run save stays open and does not silently complete setup', as
   await expect(page.getByRole('dialog', { name: '欢迎使用 AI ToDo' })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('dialog', { name: '欢迎使用 AI ToDo' })).toBeVisible();
+});
+
+
+test('explicit top-right AI settings button remains available while executing and preserves the task countdown', async ({ page }) => {
+  const { calls, errors } = await boot(page, { state: confirmedState(), currentTime: '2026-09-05T09:00:00+08:00' });
+  const button = page.locator('.top-actions').getByRole('button', { name: '大模型设置', exact: true });
+  await expect(button).toHaveText('大模型设置');
+  await expect(page.getByRole('timer').locator('small')).toHaveText('任务倒计时');
+  const originalCountdown = await page.getByRole('timer').locator('strong').textContent();
+  await button.click();
+  await page.getByLabel('使用大模型估算耗时', { exact: true }).check();
+  await page.getByLabel('API Key', { exact: true }).fill('execution-test-key');
+  await page.getByRole('button', { name: '保存设置' }).click();
+  await expect(page.locator('.top-actions .local-pill')).toHaveText('大模型估时');
+  await expect(page.getByRole('timer').locator('strong')).toHaveText(originalCountdown!);
+  await expect(page.getByRole('timer').locator('small')).toHaveText('任务倒计时');
+  await button.click();
+  await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
+  await page.getByLabel('不使用大模型', { exact: true }).check();
+  await page.getByRole('button', { name: '保存设置' }).click();
+  await expect(page.locator('.top-actions .local-pill')).toHaveText('本地模式');
+  expect(calls.filter(c => c.method === 'saveAiSettings').map(c => c.input.enabled)).toEqual([true, false]);
+  for (const step of [/01.*录入任务/, /02.*确认计划/, /03.*执行跟进/]) {
+    await page.getByRole('button', { name: step }).click();
+    await expect(button).toBeVisible();
+    await assertLayout(page);
+  }
+  expect(errors).toEqual([]);
 });

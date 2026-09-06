@@ -229,6 +229,7 @@ export function App() {
                   null
               : null
           );
+          setIsRunning(state.confirmed && Boolean(restoredCurrentTask));
           setView(state.confirmed ? "execute" : "review");
           setNotice(`已恢复本地计划 v${state.version}`);
         }
@@ -368,7 +369,7 @@ export function App() {
     setCurrentTaskId(firstTask?.id ?? "");
     setActiveTaskId(firstTask?.id ?? null);
     setManuallySelectedTaskId(null);
-    setIsRunning(false);
+    setIsRunning(Boolean(firstTask));
     setPausedCountdownSeconds(null);
     setView("execute");
     setNotice(`计划 v${result.version} 已确认，提醒节点已保存。`);
@@ -604,9 +605,13 @@ export function App() {
             </span>
           </div>
           <div className="top-actions">
-            <button className="local-pill" aria-label="大模型设置" disabled={loading} onClick={() => setSettingsOpen(true)}>
+            <span className="local-pill" aria-label="当前估时模式">
               <span className="status-dot" />
               {aiSettings.enabled ? '大模型估时' : '本地模式'}
+            </span>
+            <button className="secondary ai-settings-button" disabled={loading} onClick={() => setSettingsOpen(true)} title="重新选择是否使用大模型并配置 API Key">
+              <Sparkles size={16} />
+              大模型设置
             </button>
             <button
               className="icon-button"

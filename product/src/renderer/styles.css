@@ -1828,3 +1828,17 @@ textarea {
     scroll-behavior: auto !important;
   }
 }
+
+.ai-settings-form { display: grid; gap: 16px; }
+.ai-settings-form h2, .ai-settings-form p { margin: 0; }
+.ai-settings-form p, .ai-settings-form small { line-height: 1.7; color: var(--muted); }
+.ai-settings-form fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+.ai-settings-form legend { padding: 0 6px; }
+.ai-settings-form .mode-option { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
+.ai-settings-form input[type=radio] { width: 18px; height: 18px; accent-color: #447565; }
+.ai-fields { display: grid; gap: 14px; margin-top: 16px; }
+.ai-fields label { display: grid; gap: 6px; }
+.ai-fields input { width: 100%; min-width: 0; }
+.ai-settings-form [role=alert] { color: #a23f31; }
+
+.ai-settings-form .form-footer { position: sticky; bottom: -24px; margin-top: 0; padding: 12px 0; background: #fafbf6; z-index: 1; }

@@ -18,18 +18,10 @@ const deepseekApiKey = process.env.DEEPSEEK_API_KEY;
 const deepseekBaseUrl = (process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com').replace(/\/$/, '');
 const deepseekModel = process.env.DEEPSEEK_MODEL ?? 'deepseek-v4-flash';
 
-function estimate(title: string) {
-  if (/邮件|消息|回复/.test(title)) return 30;
-  if (/会议|评审|沟通/.test(title)) return 60;
-  if (/阅读|研究/.test(title)) return 45;
-  if (/整理|汇总|分析/.test(title)) return 60;
-  return 45;
-}
-
 function fallbackTasks(rawText: string) {
   return rawText.split(/[;；\n。]/).map((title) => title.trim()).filter(Boolean).slice(0, 20).map((title, index) => ({
     id: `gateway-${createHash('sha1').update(`${title}-${index}`).digest('hex').slice(0, 10)}`,
-    title, duration: estimate(title), aiDuration: estimate(title), priority: index < 2 ? '中' : '低', doneDefinition: `完成“${title}”的可交付结果`, status: '待安排',
+    title, duration: 30, priority: index < 2 ? '中' : '低', doneDefinition: `完成“${title}”的可交付结果`, status: '待安排',
   }));
 }
 

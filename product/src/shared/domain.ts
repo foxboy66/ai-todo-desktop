@@ -272,21 +272,13 @@ export function getScheduleOverflowTasks(schedule: ScheduledTask[], availability
   );
 }
 
-function estimateDuration(title: string) {
-  if (/邮件|消息|回复/.test(title)) return 30;
-  if (/会议|评审|沟通/.test(title)) return 60;
-  if (/阅读|看完|研究/.test(title)) return 45;
-  if (/整理|汇总|分析/.test(title)) return 60;
-  if (/写|准备|制作|完成/.test(title)) return 75;
-  return 45;
-}
+export const DEFAULT_TASK_DURATION = 30;
 
 export function createDraftTask(index = 0): Task {
   return {
     id: `task-draft-${Date.now()}-${index}`,
     title: '新计划',
-    duration: 45,
-    aiDuration: 45,
+    duration: DEFAULT_TASK_DURATION,
     priority: '中',
     doneDefinition: '补充这个计划的完成标准',
     status: '待安排',
@@ -301,8 +293,7 @@ export function parseTaskInput(input: string): Task[] {
     .map((title, index) => ({
       id: `task-${Date.now()}-${index}`,
       title,
-      duration: estimateDuration(title),
-      aiDuration: estimateDuration(title),
+      duration: DEFAULT_TASK_DURATION,
       priority: /紧急|重要|评审|截止/.test(title) ? '高' : index < 2 ? '中' : '低',
       doneDefinition: `完成“${title}”的可交付结果`,
       status: '待安排',

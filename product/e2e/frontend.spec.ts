@@ -24,6 +24,7 @@ async function boot(
   options: { state?: PlanSnapshot; failGenerate?: boolean; failLoad?: boolean; currentTime?: string } = {},
 ) {
   const calls: BridgeCall[] = [];
+  let aiSettings = { enabled: false, baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash", hasApiKey: false };
   let snapshot = structuredClone(options.state ?? emptyState);
   await page.clock.setFixedTime(new Date(options.currentTime ?? "2026-09-05T08:00:00+08:00"));
   await page.route("**/__test__/*", async (route) => {
@@ -39,12 +40,17 @@ async function boot(
     }
     let result: unknown = {};
     switch (method) {
+      case "getAiSettings": result = aiSettings; break;
+      case "saveAiSettings":
+        aiSettings = { enabled: input.enabled, baseUrl: input.baseUrl, model: input.model, hasApiKey: Boolean(input.apiKey || aiSettings.hasApiKey) };
+        result = aiSettings;
+        break;
       case "load":
         result = { ...snapshot, history: [] };
         break;
       case "generatePlan": {
         const tasks = parseTaskInput(input.rawText);
-        result = { tasks, schedule: buildSchedule(tasks, input.availability, 480) };
+        result = { tasks, schedule: buildSchedule(tasks, input.availability, 480), source: "local" };
         break;
       }
       case "saveDraft":
@@ -87,6 +93,8 @@ async function boot(
       return response.json();
     };
     window.aiTodo = {
+      getAiSettings: () => request("getAiSettings"),
+      saveAiSettings: (input) => request("saveAiSettings", input),
       load: () => request("load"),
       generatePlan: (input) => request("generatePlan", input),
       saveDraft: (input) => request("saveDraft", input),
@@ -424,4 +432,33 @@ test("long titles and extra availability do not overflow the page", async ({ pag
   for (let index = 0; index < 4; index++)
     await page.getByRole("button", { name: "添加时段" }).click();
   await assertLayout(page);
+});
+
+
+test('defaults to local mode and saves optional AI settings without revealing keys', async ({ page }) => {
+  const { calls, errors } = await boot(page);
+  await expect(page.locator('.preview-items > div')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '大模型设置', exact: true })).toHaveText('本地模式');
+  await page.getByLabel('今天想完成什么？').fill('写报告；准备会议');
+  await page.getByRole('button', { name: '生成参考计划' }).click();
+  await expect(page.getByLabel('写报告 预计耗时（分钟）')).toHaveValue('30');
+  await expect(page.getByLabel('准备会议 预计耗时（分钟）')).toHaveValue('30');
+  await expect(page.getByRole('status')).toContainText('每项 30 分钟');
+  await page.getByRole('button', { name: '大模型设置', exact: true }).click();
+  await page.getByLabel('使用大模型估算耗时', { exact: true }).check();
+  await page.getByRole('button', { name: '保存设置' }).click();
+  expect(calls.filter(c => c.method === 'saveAiSettings')).toHaveLength(0);
+  await page.getByLabel('API Key', { exact: true }).fill('test-only-key');
+  await page.getByRole('button', { name: '保存设置' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '大模型设置', exact: true })).toHaveText('大模型估时');
+  await page.reload();
+  await page.getByRole('button', { name: '大模型设置', exact: true }).click();
+  await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
+  await page.getByLabel('不使用大模型', { exact: true }).check();
+  await expect(page.getByLabel('API Key', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '保存设置' }).click();
+  await expect(page.getByRole('button', { name: '大模型设置', exact: true })).toHaveText('本地模式');
+  await expect(page.getByLabel('写报告 预计耗时（分钟）')).toHaveValue('30');
+  expect(errors).toEqual([]);
 });

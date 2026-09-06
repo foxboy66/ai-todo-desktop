@@ -1,9 +1,12 @@
+import type { AiSettings, AiSettingsInput } from './shared/ai-settings';
 import { contextBridge, ipcRenderer } from 'electron';
 import type { AvailabilityBlock, PlanSnapshot, ScheduledTask, Task } from './shared/domain';
 
 const api = {
+  getAiSettings: () => ipcRenderer.invoke('ai:settings') as Promise<AiSettings>,
+  saveAiSettings: (input: AiSettingsInput) => ipcRenderer.invoke('ai:save-settings', input) as Promise<AiSettings>,
   load: () => ipcRenderer.invoke('app:load') as Promise<PlanSnapshot & { history: Array<{ version: number; createdAt: string; reason?: string }> }>,
-  generatePlan: (input: { rawText: string; availability: AvailabilityBlock[] }) => ipcRenderer.invoke('plan:generate', input) as Promise<{ tasks: Task[]; schedule: ScheduledTask[] }>,
+  generatePlan: (input: { rawText: string; availability: AvailabilityBlock[] }) => ipcRenderer.invoke('plan:generate', input) as Promise<{ tasks: Task[]; schedule: ScheduledTask[]; source: 'local' | 'ai' | 'fallback' }>,
   saveDraft: (input: { tasks: Task[]; availability: AvailabilityBlock[]; schedule: ScheduledTask[] }) => ipcRenderer.invoke('plan:save-draft', input),
   confirmPlan: (input: { tasks: Task[]; availability: AvailabilityBlock[]; schedule: ScheduledTask[]; reason?: string }) => ipcRenderer.invoke('plan:confirm', input),
   recordProgress: (input: { taskId: string; eventType: string; payload?: Record<string, unknown> }) => ipcRenderer.invoke('progress:record', input),

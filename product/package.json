@@ -1,6 +1,6 @@
 {
   "name": "ai-todo-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "AI 个性化 ToDo 本地优先桌面应用",
   "main": "dist/main/main.js",
@@ -13,7 +13,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "test:ui": "playwright test",
-    "lint": "oxlint src gateway tests e2e playwright.config.ts"
+    "lint": "oxlint src gateway tests e2e playwright.config.ts",
+    "postinstall": "electron-builder install-app-deps",
+    "verify": "npm run typecheck && npm test && npm run lint && npm run test:ui",
+    "dist:win": "npm run verify && npm run build && electron-builder --win nsis portable --x64 --publish never && node scripts/release-checksums.cjs",
+    "pack:win": "npm run build && electron-builder --win --x64 --dir --publish never",
+    "test:desktop": "node scripts/smoke-desktop.cjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",
@@ -47,7 +52,47 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "language": "2052",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "AI-ToDo-${version}-${arch}-nsis.${ext}"
+    },
+    "portable": {
+      "artifactName": "AI-ToDo-${version}-${arch}-portable.${ext}"
     }
-  }
+  },
+  "author": "AI ToDo"
 }

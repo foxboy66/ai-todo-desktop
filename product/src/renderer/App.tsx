@@ -1,3 +1,5 @@
+import { defaultAiSettings, type AiSettings } from '../shared/ai-settings';
+import { AiSettingsForm } from './AiSettingsForm';
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   AlertCircle,
@@ -28,7 +30,6 @@ import {
   getSecondsUntilTaskEnd,
   reflowScheduleFromTask,
   parseTime,
-  starterTasks,
   type AvailabilityBlock,
   type Priority,
   type ScheduledTask,
@@ -167,17 +168,17 @@ function Modal({
 }
 
 export function App() {
+  const [aiSettings, setAiSettings] = useState<AiSettings>(defaultAiSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [view, setView] = useState<View>("capture");
-  const [tasks, setTasks] = useState<Task[]>(starterTasks);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [availability, setAvailability] = useState<AvailabilityBlock[]>(defaultAvailability);
-  const [schedule, setSchedule] = useState<ScheduledTask[]>(() =>
-    buildSchedule(starterTasks, defaultAvailability),
-  );
+  const [schedule, setSchedule] = useState<ScheduledTask[]>([]);
   const [taskInput, setTaskInput] = useState("");
   const [notice, setNotice] = useState("本地数据已准备好。先输入今天想完成的事情。");
   const [loading, setLoading] = useState(false);
   const [version, setVersion] = useState(0);
-  const [currentTaskId, setCurrentTaskId] = useState(starterTasks[0].id);
+  const [currentTaskId, setCurrentTaskId] = useState("");
   const [manuallySelectedTaskId, setManuallySelectedTaskId] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
@@ -194,6 +195,7 @@ export function App() {
   const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
+    void window.aiTodo.getAiSettings().then(setAiSettings).catch(() => setNotice('AI 设置读取失败，任务仍可按默认 30 分钟生成。'));
     void window.aiTodo
       .load()
       .then((state) => {
@@ -325,7 +327,11 @@ export function App() {
       setActiveTaskId(null);
       setPausedCountdownSeconds(null);
       setView("review");
-      setNotice(`AI 已整理 ${result.tasks.length} 个任务，并保存为本地草稿。`);
+      setNotice(result.source === 'ai'
+        ? '已使用大模型估算耗时，并保存为本地草稿。'
+        : result.source === 'fallback'
+          ? '大模型暂不可用，已按每项 30 分钟生成任务并保存草稿，可手动修改耗时。'
+          : '已按每项 30 分钟生成 ' + result.tasks.length + ' 个任务，并保存为本地草稿。');
     } catch {
       setNotice("生成计划失败，请检查连接后重试。输入的任务仍然保留。");
     } finally {
@@ -510,6 +516,7 @@ export function App() {
     setActiveTaskId(null);
     setProgress({});
     setView("capture");
+    setAiSettings(defaultAiSettings);
     setNotice("本地数据已删除。");
   }
 
@@ -517,6 +524,13 @@ export function App() {
 
   return (
     <div className="app-shell">
+      {settingsOpen && <Modal label="大模型设置" onClose={() => setSettingsOpen(false)}>
+        <AiSettingsForm settings={aiSettings} onClose={() => setSettingsOpen(false)} onSaved={(saved) => {
+          setAiSettings(saved);
+          setSettingsOpen(false);
+          setNotice(saved.enabled ? "已启用大模型估时，下次生成任务时生效。" : "已切换为本地模式，新任务默认 30 分钟。已有任务保持原耗时。");
+        }} />
+      </Modal>}
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">
@@ -571,10 +585,10 @@ export function App() {
             </span>
           </div>
           <div className="top-actions">
-            <span className="local-pill">
+            <button className="local-pill" aria-label="大模型设置" disabled={loading} onClick={() => setSettingsOpen(true)}>
               <span className="status-dot" />
-              本地模式
-            </span>
+              {aiSettings.enabled ? '大模型估时' : '本地模式'}
+            </button>
             <button
               className="icon-button"
               title="设置可用时段"
@@ -808,7 +822,7 @@ function Capture({
             今天也从容一点
           </span>
           <h1>把今天，安排得刚刚好。</h1>
-          <p>写下想做的事，让 AI 帮你理一理。一步一步来就好。</p>
+          <p>写下想做的事，一步一步安排好。无需 API Key 也能使用。</p>
         </div>
         <span className="heading-meta">
           <BellRing size={14} />
@@ -860,6 +874,7 @@ function Capture({
           </label>
           <textarea
             id="task-input"
+            maxLength={5000}
             value={taskInput}
             onChange={(event) => onInput(event.target.value)}
             placeholder="例如：准备周会材料；回复客户邮件；跑步 30 分钟"
@@ -884,7 +899,7 @@ function Capture({
         <aside className="ai-preview">
           <div className="ai-preview-head">
             <div>
-              <strong>AI 识别预览</strong>
+              <strong>任务预览</strong>
               <small>当前任务参考，生成后可逐项修改</small>
             </div>
             <span>{tasks.length} 项</span>
@@ -975,7 +990,7 @@ function Review({
         <div>
           <span className="eyebrow">参考计划 · 草稿{version ? ` · v${version + 1}` : ""}</span>
           <h1>这份安排合适吗？</h1>
-          <p>AI 负责提出建议，最终时间始终由你确认。</p>
+          <p>耗时和排程都可修改，最终时间由你确认。</p>
         </div>
         <div className="heading-buttons">
           <button className="secondary" onClick={onAddTask}>

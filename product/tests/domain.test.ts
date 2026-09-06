@@ -7,7 +7,8 @@ describe('AI ToDo 领域规则', () => {
     expect(task.id).toMatch(/^task-draft-\d+-2$/);
     expect(task.title).toBe('新计划');
     expect(task.doneDefinition).toBe('补充这个计划的完成标准');
-    expect(task.duration).toBe(45);
+    expect(task.duration).toBe(30);
+    expect(task.aiDuration).toBeUndefined();
     expect(task.priority).toBe('中');
     expect(task.status).toBe('待安排');
   });
@@ -47,6 +48,7 @@ describe('AI ToDo 领域规则', () => {
   it('支持用分号或换行拆分多个任务', () => {
     const tasks = parseTaskInput('整理资料；回复邮件\n准备会议');
     expect(tasks.map((task) => task.title)).toEqual(['整理资料', '回复邮件', '准备会议']);
+    expect(tasks.every((task) => task.duration === 30 && task.aiDuration === undefined)).toBe(true);
   });
 
   it('按绝对结束时刻计算倒计时，并自动识别当前执行任务', () => {
@@ -123,7 +125,7 @@ describe('AI ToDo 领域规则', () => {
   });
   it('不把任务安排进不可用时间，并保留未安排任务', () => {
     const tasks = parseTaskInput('准备评审；回复邮件；整理记录');
-    const schedule = buildSchedule(tasks, [{ id: 'morning', start: '09:00', end: '10:00', kind: 'available' }, { id: 'afternoon', start: '14:00', end: '15:00', kind: 'available' }]);
+    const schedule = buildSchedule(tasks, [{ id: 'morning', start: '09:00', end: '09:30', kind: 'available' }, { id: 'afternoon', start: '14:00', end: '14:30', kind: 'available' }], 480);
     expect(schedule.every((task) => task.scheduled ? task.startLabel !== '10:00' : true)).toBe(true);
     expect(schedule.some((task) => !task.scheduled)).toBe(true);
   });

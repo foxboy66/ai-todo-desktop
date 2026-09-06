@@ -1,12 +1,21 @@
-import { app, BrowserWindow, ipcMain, Menu, Notification, nativeImage, Tray } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, Notification, nativeImage, safeStorage, Tray } from 'electron';
 import { join } from 'node:path';
 import { buildSchedule, replanTasks, type AvailabilityBlock, type ScheduledTask, type Task } from '../shared/domain';
-import { parseTasksWithGateway } from './ai-gateway';
+import { estimateTasks } from './ai-gateway';
+import { AiSettingsStore } from './ai-settings';
+import type { AiSettingsInput } from '../shared/ai-settings';
 import { ReminderScheduler } from './scheduler';
 import { TodoStore } from './store';
 
 let store: TodoStore;
 let scheduler: ReminderScheduler;
+let aiSettings: AiSettingsStore;
+let tray: Tray;
+let quitting = false;
+
+// Isolate packaged smoke tests from the user's data.
+if (process.env.AI_TODO_TEST_USER_DATA) app.setPath('userData', process.env.AI_TODO_TEST_USER_DATA);
+if (!app.requestSingleInstanceLock()) app.quit();
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -15,17 +24,30 @@ function createWindow() {
     minWidth: 1080,
     minHeight: 720,
     backgroundColor: '#eef3f2',
+    icon: join(__dirname, '../renderer/icon.png'),
     webPreferences: { preload: join(__dirname, '../preload.js'), contextIsolation: true, nodeIntegration: false },
   });
   window.loadFile(join(__dirname, '../renderer/index.html'));
+  window.setMenuBarVisibility(false);
+  window.on('close', (event) => {
+    if (!quitting) { event.preventDefault(); window.hide(); }
+  });
   return window;
 }
 
 function registerIpc() {
   ipcMain.handle('app:load', () => store.load());
+  ipcMain.handle('ai:settings', () => aiSettings.get());
+  ipcMain.handle('ai:save-settings', (_event, input: AiSettingsInput) => aiSettings.save(input));
   ipcMain.handle('plan:generate', async (_event, input: { rawText: string; availability: AvailabilityBlock[] }) => {
-    const tasks = await parseTasksWithGateway(input.rawText);
-    return { tasks, schedule: buildSchedule(tasks, input.availability) };
+    if (typeof input.rawText !== 'string' || input.rawText.length > 5000) throw new Error('任务输入不能超过 5000 字。');
+    let settings;
+    try { settings = aiSettings.runtime(); } catch {
+      const result = await estimateTasks(input.rawText, { enabled: false, apiKey: '', baseUrl: '', model: '' });
+      return { ...result, source: 'fallback', schedule: buildSchedule(result.tasks, input.availability) };
+    }
+    const result = await estimateTasks(input.rawText, settings);
+    return { ...result, schedule: buildSchedule(result.tasks, input.availability) };
   });
   ipcMain.handle('plan:save-draft', (_event, input: { tasks: Task[]; availability: AvailabilityBlock[]; schedule: ScheduledTask[] }) => {
     return store.saveDraft(input.tasks, input.availability, input.schedule);
@@ -49,20 +71,24 @@ function registerIpc() {
   });
   ipcMain.handle('data:clear', () => {
     store.clear();
+    aiSettings.clear();
     return { ok: true };
   });
 }
 
 app.whenReady().then(() => {
   store = new TodoStore(join(app.getPath('userData'), 'ai-todo.sqlite'));
+  aiSettings = new AiSettingsStore(join(app.getPath('userData'), 'ai-settings.json'), safeStorage);
   registerIpc();
   const window = createWindow();
-  const tray = new Tray(nativeImage.createEmpty());
+  tray = new Tray(nativeImage.createFromPath(join(__dirname, '../renderer/icon.png')).resize({ width: 16, height: 16 }));
   tray.setToolTip('AI ToDo');
   tray.setContextMenu(Menu.buildFromTemplate([{ label: '打开 AI ToDo', click: () => window.show() }, { label: '退出', click: () => app.quit() }]));
+  tray.on('double-click', () => window.show());
+  app.on('second-instance', () => { window.show(); window.focus(); });
   scheduler = new ReminderScheduler(store, window);
   scheduler.start();
-  app.on('before-quit', () => { scheduler.stop(); store.close(); });
+  app.on('before-quit', () => { quitting = true; scheduler.stop(); store.close(); });
   app.on('activate', () => window.show());
 });
 

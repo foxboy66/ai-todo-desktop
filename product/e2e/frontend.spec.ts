@@ -215,6 +215,8 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
     doneDefinition: "完成 5 页可演示的材料",
   });
   expect(confirmed.tasks).toHaveLength(2);
+  await page.clock.setFixedTime(new Date("2026-09-05T09:00:00+08:00"));
+  await page.waitForTimeout(1100);
   await page.getByRole("button", { name: "完成 50%", exact: true }).click();
   await expect(page.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
   await expect
@@ -224,14 +226,27 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
       ),
     )
     .toBe(true);
+  const countdown = page.getByRole("timer").locator("strong");
+  await expect(countdown).toHaveText("00:30:00");
   await page.getByRole("button", { name: "继续任务", exact: true }).click();
   await expect(page.getByRole("button", { name: "暂停任务", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "暂停任务", exact: true }).click();
+  await expect(page.getByRole("button", { name: "继续任务", exact: true })).toBeVisible();
+  await page.clock.setFixedTime(new Date("2026-09-05T09:10:00+08:00"));
+  await page.waitForTimeout(1100);
+  await expect(countdown).toHaveText("00:30:00");
+  await page.getByRole("button", { name: "继续任务", exact: true }).click();
+  await expect(countdown).toHaveText("00:20:00");
   await capture(page, info, "execute");
   await expect(page.locator(".sidebar .cat-friend")).toHaveCount(1);
   await expect(page.locator("main .cat-friend")).toHaveCount(0);
   await page.getByRole("button", { name: "标记为已完成" }).click();
+  await expect(page.locator(".focus-top h2")).toHaveText("准备周会演示");
+  await expect(page.getByRole("button", { name: "开始下一任务", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "开始下一任务", exact: true }).click();
   await expect(page.locator(".focus-top h2")).toHaveText("回复客户邮件");
+  await expect(page.locator(".time-chip")).toHaveText("09:10–09:40");
+  await expect(page.getByRole("button", { name: "暂停任务", exact: true })).toBeVisible();
   await expect(page.locator(".timeline-item.done")).toContainText("准备周会演示");
   expect(errors).toEqual([]);
 });

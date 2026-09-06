@@ -35,6 +35,9 @@ const delay = milliseconds => new Promise(resolve => setTimeout(resolve, millise
     const page = browser.contexts()[0].pages()[0];
     await page.waitForFunction(() => Boolean(window.aiTodo));
     assert.equal((await page.evaluate(() => window.aiTodo.getAiSettings())).enabled, false);
+    await page.getByRole('dialog', { name: '欢迎使用 AI ToDo' }).waitFor();
+    await page.getByRole('button', { name: '开始使用', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
     await page.getByLabel('今天想完成什么？').fill('验证便携版');
     await page.getByRole('button', { name: '生成参考计划' }).click();
     await page.getByRole('heading', { name: '这份安排合适吗？' }).waitFor();

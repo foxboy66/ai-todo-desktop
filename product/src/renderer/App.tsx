@@ -168,6 +168,7 @@ function Modal({
 }
 
 export function App() {
+  const [startupReady, setStartupReady] = useState(false);
   const [aiSettings, setAiSettings] = useState<AiSettings>(defaultAiSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [view, setView] = useState<View>("capture");
@@ -195,8 +196,14 @@ export function App() {
   const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
-    void window.aiTodo.getAiSettings().then(setAiSettings).catch(() => setNotice('AI 设置读取失败，任务仍可按默认 30 分钟生成。'));
-    void window.aiTodo
+    const settingsLoad = window.aiTodo.getAiSettings().then((settings) => {
+      setAiSettings(settings);
+      setSettingsOpen(!settings.setupCompleted);
+    }).catch(() => {
+      setSettingsOpen(true);
+      setNotice('AI 设置读取失败，请重新选择使用方式。任务仍可按默认 30 分钟生成。');
+    });
+    const planLoad = window.aiTodo
       .load()
       .then((state) => {
         if (state.tasks.length) {
@@ -227,6 +234,7 @@ export function App() {
         }
       })
       .catch(() => setNotice("暂时无法读取本地计划，但仍可继续编辑。"));
+    void Promise.all([settingsLoad, planLoad]).then(() => setStartupReady(true));
     return window.aiTodo.onReminder((reminder) => {
       const reminderKind =
         reminder && typeof reminder === "object" && "kind" in reminder ? reminder.kind : undefined;
@@ -248,6 +256,16 @@ export function App() {
       playReminderTone(audioContextRef);
     });
   }, []);
+
+  useEffect(() => {
+    if (!startupReady) return;
+    // Tell the main process only after restored state and the welcome dialog have painted.
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => window.aiTodo.rendererReady());
+    });
+    return () => { window.cancelAnimationFrame(firstFrame); window.cancelAnimationFrame(secondFrame); };
+  }, [startupReady]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -521,11 +539,12 @@ export function App() {
   }
 
   if (!currentTask && view === "execute") setStep("capture");
+  if (!startupReady) return <div className="startup-screen" role="status">正在读取本地计划…</div>;
 
   return (
     <div className="app-shell">
-      {settingsOpen && <Modal label="大模型设置" onClose={() => setSettingsOpen(false)}>
-        <AiSettingsForm settings={aiSettings} onClose={() => setSettingsOpen(false)} onSaved={(saved) => {
+      {settingsOpen && <Modal label={aiSettings.setupCompleted ? "大模型设置" : "欢迎使用 AI ToDo"} onClose={() => { if (aiSettings.setupCompleted) setSettingsOpen(false); }}>
+        <AiSettingsForm firstRun={!aiSettings.setupCompleted} settings={aiSettings} onClose={() => setSettingsOpen(false)} onSaved={(saved) => {
           setAiSettings(saved);
           setSettingsOpen(false);
           setNotice(saved.enabled ? "已启用大模型估时，下次生成任务时生效。" : "已切换为本地模式，新任务默认 30 分钟。已有任务保持原耗时。");

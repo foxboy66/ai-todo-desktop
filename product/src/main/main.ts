@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu, Notification, nativeImage, safeStorage, Tray } from 'electron';
 import { join } from 'node:path';
+import { createWindowStartup } from './window-startup';
 import { buildSchedule, replanTasks, type AvailabilityBlock, type ScheduledTask, type Task } from '../shared/domain';
 import { estimateTasks } from './ai-gateway';
 import { AiSettingsStore } from './ai-settings';
@@ -15,10 +16,12 @@ let quitting = false;
 
 // Isolate packaged smoke tests from the user's data.
 if (process.env.AI_TODO_TEST_USER_DATA) app.setPath('userData', process.env.AI_TODO_TEST_USER_DATA);
-if (!app.requestSingleInstanceLock()) app.quit();
+const hasInstanceLock = app.requestSingleInstanceLock();
+if (!hasInstanceLock) app.quit();
 
 function createWindow() {
   const window = new BrowserWindow({
+    show: false,
     width: 1440,
     height: 960,
     minWidth: 1080,
@@ -27,6 +30,13 @@ function createWindow() {
     icon: join(__dirname, '../renderer/icon.png'),
     webPreferences: { preload: join(__dirname, '../preload.js'), contextIsolation: true, nodeIntegration: false },
   });
+  const startup = createWindowStartup(() => window.show());
+  window.once('ready-to-show', () => startup.paintReady());
+  const onRendererReady = (event: Electron.IpcMainEvent) => {
+    if (event.sender === window.webContents) startup.rendererReady();
+  };
+  ipcMain.on('app:renderer-ready', onRendererReady);
+  window.once('closed', () => ipcMain.removeListener('app:renderer-ready', onRendererReady));
   window.loadFile(join(__dirname, '../renderer/index.html'));
   window.setMenuBarVisibility(false);
   window.on('close', (event) => {
@@ -76,7 +86,7 @@ function registerIpc() {
   });
 }
 
-app.whenReady().then(() => {
+if (hasInstanceLock) app.whenReady().then(() => {
   store = new TodoStore(join(app.getPath('userData'), 'ai-todo.sqlite'));
   aiSettings = new AiSettingsStore(join(app.getPath('userData'), 'ai-settings.json'), safeStorage);
   registerIpc();

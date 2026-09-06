@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { AvailabilityBlock, PlanSnapshot, ScheduledTask, Task } from './shared/domain';
 
 const api = {
+  rendererReady: () => ipcRenderer.send('app:renderer-ready'),
   getAiSettings: () => ipcRenderer.invoke('ai:settings') as Promise<AiSettings>,
   saveAiSettings: (input: AiSettingsInput) => ipcRenderer.invoke('ai:save-settings', input) as Promise<AiSettings>,
   load: () => ipcRenderer.invoke('app:load') as Promise<PlanSnapshot & { history: Array<{ version: number; createdAt: string; reason?: string }> }>,

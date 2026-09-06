@@ -1842,3 +1842,5 @@ textarea {
 .ai-settings-form [role=alert] { color: #a23f31; }
 
 .ai-settings-form .form-footer { position: sticky; bottom: -24px; margin-top: 0; padding: 12px 0; background: #fafbf6; z-index: 1; }
+
+.startup-screen { min-height: 100vh; display: grid; place-items: center; background: #eef3f2; color: #497b68; }

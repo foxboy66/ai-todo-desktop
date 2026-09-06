@@ -21,12 +21,12 @@ export class AiSettingsStore {
     if (!existsSync(this.path)) return { ...defaultAiSettings, encryptedKey: '' };
     const saved = JSON.parse(readFileSync(this.path, 'utf8'));
     const settings = settingsSchema.parse(saved);
-    return { ...settings, encryptedKey: z.string().parse(saved.encryptedKey) };
+    return { ...settings, setupCompleted: z.boolean().optional().default(true).parse(saved.setupCompleted), encryptedKey: z.string().parse(saved.encryptedKey) };
   }
 
   get() {
-    const { enabled, baseUrl, model, encryptedKey } = this.read();
-    return { enabled, baseUrl, model, hasApiKey: Boolean(encryptedKey) };
+    const { enabled, baseUrl, model, encryptedKey, setupCompleted } = this.read();
+    return { enabled, baseUrl, model, hasApiKey: Boolean(encryptedKey), setupCompleted };
   }
 
   runtime(): AiRuntimeSettings {
@@ -42,7 +42,10 @@ export class AiSettingsStore {
 
   save(input: AiSettingsInput) {
     const next = settingsSchema.parse(input);
-    let encryptedKey = this.read().encryptedKey;
+    let encryptedKey = '';
+    try { encryptedKey = this.read().encryptedKey; } catch {
+      // An explicit save can recover unreadable settings without blocking local use.
+    }
     if (next.enabled) {
       let url: URL;
       try { url = new URL(next.baseUrl); } catch { throw new Error('请输入有效的 API 地址。'); }
@@ -56,7 +59,7 @@ export class AiSettingsStore {
       if (!this.vault.isEncryptionAvailable()) throw new Error('系统密钥加密暂不可用，请使用本地模式。');
       encryptedKey = this.vault.encryptString(next.apiKey).toString('base64');
     }
-    const saved = { enabled: next.enabled, baseUrl: next.baseUrl.replace(/\/+$/, ''), model: next.model, encryptedKey };
+    const saved = { enabled: next.enabled, baseUrl: next.baseUrl.replace(/\/+$/, ''), model: next.model, encryptedKey, setupCompleted: true };
     writeFileSync(this.path + '.tmp', JSON.stringify(saved), { mode: 0o600 });
     renameSync(this.path + '.tmp', this.path);
     return this.get();

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -53,5 +53,31 @@ describe('AI 设置持久化', () => {
     vault.isEncryptionAvailable.mockReturnValue(false);
     expect(() => store.save({ ...defaultAiSettings, enabled: true, apiKey: 'key' })).toThrow('加密');
     expect(store.save(defaultAiSettings).enabled).toBe(false);
+  });
+});
+
+
+describe('首次使用选择与升级兼容', () => {
+  it('首次选择本地模式后持久化完成标记，清除数据后恢复首次状态', () => {
+    expect(store.get().setupCompleted).toBe(false);
+    store.save(defaultAiSettings);
+    store = new AiSettingsStore(join(dir, 'settings.json'), vault);
+    expect(store.get().setupCompleted).toBe(true);
+    expect(store.get().enabled).toBe(false);
+    store.clear();
+    expect(store.get().setupCompleted).toBe(false);
+  });
+  it('旧版已保存设置升级后不重复询问，也不丢失密钥', () => {
+    store.save({ ...defaultAiSettings, enabled: true, apiKey: 'legacy-key' });
+    const saved = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
+    delete saved.setupCompleted;
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify(saved));
+    expect(store.get().setupCompleted).toBe(true);
+    expect(store.runtime().apiKey).toBe('legacy-key');
+  });
+  it('损坏的设置可通过重新选择本地模式恢复，不阻止首次使用', () => {
+    writeFileSync(join(dir, 'settings.json'), 'invalid JSON');
+    expect(() => store.get()).toThrow();
+    expect(store.save(defaultAiSettings)).toMatchObject({ enabled: false, setupCompleted: true, hasApiKey: false });
   });
 });

@@ -4,6 +4,7 @@ import type { AvailabilityBlock, PlanSnapshot, ScheduledTask, Task } from '@/sha
 declare global {
   interface Window {
     aiTodo: {
+      rendererReady: () => void;
       getAiSettings: () => Promise<AiSettings>;
       saveAiSettings: (input: AiSettingsInput) => Promise<AiSettings>;
       load: () => Promise<PlanSnapshot & { history: Array<{ version: number; createdAt: string; reason?: string }> }>;

@@ -21,10 +21,10 @@ const emptyState: PlanSnapshot = {
 // Only the Electron IPC boundary is replaced, so real user data/API keys are never touched.
 async function boot(
   page: Page,
-  options: { state?: PlanSnapshot; failGenerate?: boolean; failLoad?: boolean; currentTime?: string } = {},
+  options: { state?: PlanSnapshot; failGenerate?: boolean; failLoad?: boolean; firstRun?: boolean; failSettingsSave?: boolean; currentTime?: string } = {},
 ) {
   const calls: BridgeCall[] = [];
-  let aiSettings = { enabled: false, baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash", hasApiKey: false };
+  let aiSettings = { enabled: false, baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash", hasApiKey: false, setupCompleted: !options.firstRun };
   let snapshot = structuredClone(options.state ?? emptyState);
   await page.clock.setFixedTime(new Date(options.currentTime ?? "2026-09-05T08:00:00+08:00"));
   await page.route("**/__test__/*", async (route) => {
@@ -33,7 +33,8 @@ async function boot(
     calls.push({ method, input });
     if (
       (method === "generatePlan" && options.failGenerate) ||
-      (method === "load" && options.failLoad)
+      (method === "load" && options.failLoad) ||
+      (method === "saveAiSettings" && options.failSettingsSave)
     ) {
       await route.fulfill({ status: 503, json: { error: "Unavailable" } });
       return;
@@ -42,7 +43,7 @@ async function boot(
     switch (method) {
       case "getAiSettings": result = aiSettings; break;
       case "saveAiSettings":
-        aiSettings = { enabled: input.enabled, baseUrl: input.baseUrl, model: input.model, hasApiKey: Boolean(input.apiKey || aiSettings.hasApiKey) };
+        aiSettings = { enabled: input.enabled, baseUrl: input.baseUrl, model: input.model, hasApiKey: Boolean(input.apiKey || aiSettings.hasApiKey), setupCompleted: true };
         result = aiSettings;
         break;
       case "load":
@@ -93,6 +94,7 @@ async function boot(
       return response.json();
     };
     window.aiTodo = {
+      rendererReady: () => { void request("rendererReady"); },
       getAiSettings: () => request("getAiSettings"),
       saveAiSettings: (input) => request("saveAiSettings", input),
       load: () => request("load"),
@@ -461,4 +463,51 @@ test('defaults to local mode and saves optional AI settings without revealing ke
   await expect(page.getByRole('button', { name: '大模型设置', exact: true })).toHaveText('本地模式');
   await expect(page.getByLabel('写报告 预计耗时（分钟）')).toHaveValue('30');
   expect(errors).toEqual([]);
+});
+
+
+test('first launch asks for a mode and remembers the local choice', async ({ page }) => {
+  const { calls, errors } = await boot(page, { firstRun: true });
+  const welcome = page.getByRole('dialog', { name: '欢迎使用 AI ToDo' });
+  await expect(welcome).toBeVisible();
+  await expect(welcome.getByLabel('不使用大模型', { exact: true })).toBeChecked();
+  await expect(welcome).toContainText('每项新任务默认 30 分钟');
+  await expect(welcome.getByLabel('API Key', { exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(welcome).toBeVisible();
+  await page.getByRole('button', { name: '开始使用', exact: true }).click();
+  await expect(welcome).toHaveCount(0);
+  expect(calls.find(c => c.method === 'saveAiSettings')?.input.enabled).toBe(false);
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('把今天，安排得刚刚好。');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByLabel('今天想完成什么？').fill('准备会议');
+  await page.getByRole('button', { name: '生成参考计划' }).click();
+  await expect(page.getByLabel('准备会议 预计耗时（分钟）')).toHaveValue('30');
+  expect(errors).toEqual([]);
+});
+
+test('first launch supports opting into AI and requires a key before continuing', async ({ page }) => {
+  const { calls, errors } = await boot(page, { firstRun: true });
+  await page.getByLabel('使用大模型估算耗时', { exact: true }).check();
+  await page.getByRole('button', { name: '开始使用', exact: true }).click();
+  expect(calls.filter(c => c.method === 'saveAiSettings')).toHaveLength(0);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByLabel('API Key', { exact: true }).fill('first-run-test-key');
+  await page.getByRole('button', { name: '开始使用', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '大模型设置', exact: true })).toHaveText('大模型估时');
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('failed first-run save stays open and does not silently complete setup', async ({ page }) => {
+  await boot(page, { firstRun: true, failSettingsSave: true });
+  await page.getByRole('button', { name: '开始使用', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('设置未保存');
+  await expect(page.getByRole('dialog', { name: '欢迎使用 AI ToDo' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('dialog', { name: '欢迎使用 AI ToDo' })).toBeVisible();
 });

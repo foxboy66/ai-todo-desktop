@@ -1,0 +1,23 @@
+node_modules/
+dist/
+release/
+test-results/
+playwright-report/
+coverage/
+.vscode/
+.idea/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Local prototypes and internal project material are intentionally excluded.
+/demo/
+/docs/
+/product/
+/AI_TODO_产品设计文档.md
+/AGENTS.md

@@ -1,4 +1,4 @@
-# AI ToDo\n\n[简体中文](README.zh-CN.md)
+# AI ToDo [简体中文](README.zh-CN.md)
 
 AI ToDo is a local-first Windows desktop task planner. It turns a list of tasks into an executable schedule, keeps the plan in a local SQLite database, and provides countdowns, progress check-ins, and completion reminders while you work.
 
@@ -6,14 +6,9 @@ Current release: **0.2.3**
 
 ## Features
 
-- Local mode works without an API key.
 - Optional AI estimation through the in-app settings. Only task titles are sent to the configured model gateway; the plan, schedule, reminders, progress, and local data stay in the desktop app.
 - Availability-window scheduling with tasks carried across windows when necessary.
-- No artificial 15-minute buffer between tasks.
-- Confirmation-page edits are saved to the local draft immediately.
 - Countdown is calculated from the current time to the active task's actual end time.
-- Pause and resume support.
-- Early completion can start the next task and reflow the remaining schedule.
 - Start, progress-check, and task-end notifications use an in-app popup and sound.
 - Local SQLite persistence, single-click system tray restore, and encrypted API-key storage through Electron safeStorage.
 
@@ -69,11 +64,6 @@ The app stores its local database and settings in Electron's application data di
 
 API keys are stored through Electron safeStorage when the platform supports it. AI estimation is optional. When enabled, task titles may be sent to the configured model endpoint; task notes, schedule state, and local database contents are not sent by the desktop app's estimation request.
 
-## Packaging
-
-npm run dist:win writes installers and portable artifacts to release/. These files are intentionally ignored by Git and should be attached to a GitHub Release rather than committed to the source repository.
-
-The source repository contains the packaging scripts and icon sources, but not node_modules/, dist/, release/, test reports, local databases, .env, or previous installer archives.
 
 ## Repository layout
 
@@ -96,7 +86,7 @@ The source repository contains the packaging scripts and icon sources, but not n
 
 ## Contributing
 
-Bug reports and pull requests are welcome. Please run npm run verify before submitting a change. Keep user data, API keys, installers, and generated build output out of commits.
+Bug reports and pull requests are welcome. Please run npm run verify before submitting a change. 
 
 See CONTRIBUTING.md for the project workflow.
 

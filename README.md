@@ -45,14 +45,11 @@ The repository also includes a small optional gateway under gateway/ for develop
 | npm run verify | Run the complete verification suite |
 | npm run dist:win | Build Windows NSIS and portable packages |
 
-The launcher scripts are also available for Windows users:
+Windows users can also double-click the root launcher:
 
 - 启动 AI ToDo.bat
-- 启动 AI ToDo.ps1
-- launch-ai-todo.ps1
-- launch-ai-todo.vbs
 
-The launcher automatically installs dependencies, rebuilds Electron native modules when needed, builds the app, and starts it.
+The launcher implementation lives under `scripts/launch/`. It automatically installs dependencies, rebuilds Electron native modules when needed, builds the app, and starts it.
 
 ## Data and privacy
 
@@ -72,7 +69,11 @@ API keys are stored through Electron safeStorage when the platform supports it. 
 ├── build/                 # Electron icon sources
 ├── e2e/                   # Playwright UI tests
 ├── gateway/               # Optional standalone development gateway
-├── scripts/               # Packaging and desktop smoke-test scripts
+├── scripts/
+│   ├── build/             # Icon generation and release utilities
+│   ├── launch/            # Windows launcher implementation
+│   ├── smoke/             # Packaged-application smoke tests
+│   └── test/              # Standalone integration-test runners
 ├── src/
 │   ├── main/              # Electron main process and persistence
 │   ├── renderer/          # React renderer UI

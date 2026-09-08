@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$productRoot = Split-Path -Parent $PSScriptRoot
+$productRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $registryRoots = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall', 'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')
 foreach ($registryRoot in $registryRoots) {
   if (Test-Path -LiteralPath $registryRoot) {

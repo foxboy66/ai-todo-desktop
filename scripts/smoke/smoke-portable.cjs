@@ -5,7 +5,7 @@ const path = require('node:path');
 const net = require('node:net');
 const { spawn, execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(__dirname, '../..');
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 (async () => {
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'ai-todo-portable-test-'));
@@ -15,7 +15,7 @@ const delay = milliseconds => new Promise(resolve => setTimeout(resolve, millise
   await new Promise(resolve => server.close(resolve));
   const env = { ...process.env, AI_TODO_TEST_USER_DATA: profile };
   delete env.ELECTRON_RUN_AS_NODE;
-  const version = require('../package.json').version;
+  const version = require('../../package.json').version;
   const executable = path.join(root, 'release', 'AI-ToDo-' + version + '-x64-portable.exe');
   const child = spawn(executable, ['--remote-debugging-port=' + port, '--remote-debugging-address=127.0.0.1'], { env, windowsHide: true, stdio: 'ignore' });
   let browser;

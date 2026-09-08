@@ -47,14 +47,11 @@ npm start
 | `npm run verify` | 执行完整验证套件 |
 | `npm run dist:win` | 构建 Windows NSIS 安装包和便携版程序 |
 
-Windows 用户也可以直接使用以下启动脚本：
+Windows 用户也可以直接双击根目录启动入口：
 
 - `启动 AI ToDo.bat`
-- `启动 AI ToDo.ps1`
-- `launch-ai-todo.ps1`
-- `launch-ai-todo.vbs`
 
-启动脚本会自动安装依赖、在需要时重新构建 Electron 原生模块、构建应用并启动。
+启动实现位于 `scripts/launch/`。该入口会自动安装依赖、在需要时重新构建 Electron 原生模块、构建应用并启动。
 
 ## 数据与隐私
 
@@ -73,7 +70,11 @@ Windows 用户也可以直接使用以下启动脚本：
 ├── build/                 # Electron 图标源文件
 ├── e2e/                   # Playwright UI 测试
 ├── gateway/               # 可选的独立开发网关
-├── scripts/               # 打包和桌面冒烟测试脚本
+├── scripts/
+│   ├── build/             # 图标生成和发布工具
+│   ├── launch/            # Windows 启动器实现
+│   ├── smoke/             # 打包应用冒烟测试
+│   └── test/              # 独立集成测试运行器
 ├── src/
 │   ├── main/              # Electron 主进程和持久化逻辑
 │   ├── renderer/          # React 渲染器界面

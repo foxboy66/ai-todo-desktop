@@ -1,5 +1,5 @@
 ﻿$ErrorActionPreference = 'Stop'
-$productRoot = $PSScriptRoot
+$productRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 
 function Hide-LauncherConsole {
   if (-not ('AiTodoConsoleWindow' -as [type])) {

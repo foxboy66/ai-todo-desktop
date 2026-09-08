@@ -16,10 +16,10 @@
     "lint": "oxlint src gateway tests e2e playwright.config.ts",
     "postinstall": "electron-builder install-app-deps",
     "verify": "npm run typecheck && npm test && npm run test:store && npm run lint && npm run test:ui",
-    "dist:win": "npm run verify && npm run build && electron-builder --win nsis portable --x64 --publish never && node scripts/release-checksums.cjs",
+    "dist:win": "npm run verify && npm run build && electron-builder --win nsis portable --x64 --publish never && node scripts/build/release-checksums.cjs",
     "pack:win": "npm run build && electron-builder --win --x64 --dir --publish never",
-    "test:desktop": "node scripts/smoke-desktop.cjs",
-    "test:store": "npm run build:main && node scripts/test-store.cjs"
+    "test:desktop": "node scripts/smoke/smoke-desktop.cjs",
+    "test:store": "npm run build:main && node scripts/test/test-store.cjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",

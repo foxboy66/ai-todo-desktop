@@ -2,7 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require('playwright');
 (async () => {
-  const root = path.resolve(__dirname, '..');
+  const root = path.resolve(__dirname, '../..');
   const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined });
   try {
     const page = await browser.newPage({ viewport: { width: 256, height: 256 }, deviceScaleFactor: 1 });

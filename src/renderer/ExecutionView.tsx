@@ -14,7 +14,7 @@ export function Execute({ schedule, currentTask, progress, countdownSeconds, isA
   const canAct = isActiveTask && !done;
   const label = done ? '任务已完成' : pausedCountdownSeconds !== null ? '倒计时已暂停' : isRunning && isActiveTask ? '任务倒计时' : isActiveTask ? '等待开始' : '等待前置任务';
   return <section>
-    <div className="heading-row"><div><h1>执行跟进</h1><p>专注当前任务，完成后再开始下一项。</p></div><button className="secondary" onClick={onReview}>查看完整计划</button></div>
+    <div className="heading-row"><div><h1>执行跟进</h1><p>专注当前任务，完成后自动开始下一项。</p></div><button className="secondary" onClick={onReview}>查看完整计划</button></div>
     <div className="execute-grid">
       <div className="focus-card">
         <div className="focus-top"><div><span className="focus-kicker">{done ? '已完成' : isActiveTask ? '当前任务' : '待执行'}</span><h2>{currentTask.title}</h2><p>{currentTask.doneDefinition}</p></div><span className="time-chip"><Clock3 size={14} />{formatScheduleLabel(currentTask)}</span></div>

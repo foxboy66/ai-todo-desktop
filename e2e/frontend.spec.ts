@@ -299,13 +299,12 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
   await expect(page.getByRole("timer").locator("small")).toHaveText("任务倒计时");
   await capture(page, info, "execute");
   await page.getByRole("button", { name: "标记为已完成" }).click();
-  await expect(page.locator(".focus-top h2")).toHaveText("准备周会演示");
-  await expect(page.getByRole("button", { name: "开始下一任务", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "开始下一任务", exact: true }).click();
   await expect(page.locator(".focus-top h2")).toHaveText("回复客户邮件");
   await expect(page.locator(".time-chip")).toHaveText("09:10–09:40");
   await expect(page.getByRole("button", { name: "暂停任务", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "开始下一任务", exact: true })).toHaveCount(0);
   await expect(page.locator(".timeline-item.done")).toContainText("准备周会演示");
+  expect(calls.filter((call) => call.method === "confirmPlan").at(-1)?.input.reason).toBe("完成后自动开始下一任务");
   expect(errors).toEqual([]);
 });
 

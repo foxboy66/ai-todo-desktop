@@ -492,17 +492,46 @@ export function App() {
     const completedSchedule = schedule.map((task) =>
       task.id === currentTask.id ? { ...task, status: "已完成" as const, progress: 100, completedAt: new Date().toISOString() } : task,
     );
+    setPausedCountdownSeconds(null);
+    const next = getNextPendingTask(completedSchedule, currentTask.id);
+    if (next) {
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const nextSchedule = reflowScheduleFromTask(completedSchedule, next.id, nowMinutes, next.duration);
+      setLoading(true);
+      try {
+        if (!await pendingSave.current) throw new Error("保存失败");
+        const state = await window.aiTodo.confirmPlan({
+          day,
+          tasks: completedTasks,
+          availability,
+          schedule: nextSchedule,
+          reason: "完成后自动开始下一任务",
+        });
+        setVersion(state.version);
+        setTasks(completedTasks);
+        setSchedule(nextSchedule);
+        setCurrentTaskId(next.id);
+        setActiveTaskId(next.id);
+        setManuallySelectedTaskId(null);
+        setIsRunning(true);
+        setNotice("“" + currentTask.title + "”已完成，已自动开始“" + next.title + "”，后续时间已前移。");
+        return;
+      } catch {
+        setTasks(completedTasks);
+        setSchedule(completedSchedule);
+        setActiveTaskId(null);
+        setIsRunning(false);
+        setNotice("“" + currentTask.title + "”已完成，但下一任务自动开始失败，请点击“开始下一任务”重试。");
+        return;
+      } finally {
+        setLoading(false);
+      }
+    }
     setTasks(completedTasks);
     setSchedule(completedSchedule);
-    const next = getNextPendingTask(schedule, currentTask.id);
     setActiveTaskId(null);
     setIsRunning(false);
-    setPausedCountdownSeconds(null);
-    if (next) {
-      setNotice("“" + currentTask.title + "”已完成，点击“开始下一任务”继续，后续时间会自动前移。");
-    } else {
-      setNotice("今天计划中的任务已全部完成。");
-    }
+    setNotice("今天计划中的任务已全部完成。");
   }
 
   async function startNextTask() {

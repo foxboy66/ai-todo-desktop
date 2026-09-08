@@ -110,3 +110,38 @@ describe('提醒调度器', () => {
   });
 
 });
+
+describe('启动和恢复不补发旧提醒', () => {
+  it('以启动时间为界，只投递后续正常轮询中的到点提醒，重复启动不创建多个定时器', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-07T09:00:05'));
+    const store = { getDueReminders: vi.fn(() => []), markReminderSent: vi.fn() };
+    const scheduler = new ReminderScheduler(store as never, {} as never);
+    try {
+      scheduler.start();
+      expect(store.getDueReminders).toHaveBeenLastCalledWith(new Date('2026-09-07T09:00:05'), new Date('2026-09-07T09:00:05'));
+      vi.advanceTimersByTime(10_000);
+      expect(store.getDueReminders).toHaveBeenLastCalledWith(new Date('2026-09-07T09:00:15'), new Date('2026-09-07T09:00:05'));
+      scheduler.start();
+      expect(vi.getTimerCount()).toBe(1);
+      expect(store.getDueReminders).toHaveBeenLastCalledWith(new Date('2026-09-07T09:00:15'), new Date('2026-09-07T09:00:15'));
+      scheduler.stop();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { scheduler.stop(); vi.useRealTimers(); }
+  });
+  it('休眠恢复或系统时钟回拨后重新建立边界，不补发间隔内的提醒', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-07T09:00:00'));
+    const store = { getDueReminders: vi.fn(() => []), markReminderSent: vi.fn() };
+    const scheduler = new ReminderScheduler(store as never, {} as never);
+    try {
+      scheduler.start();
+      vi.setSystemTime(new Date('2026-09-07T12:00:00'));
+      (scheduler as unknown as { tick: () => void }).tick();
+      expect(store.getDueReminders).toHaveBeenLastCalledWith(new Date('2026-09-07T12:00:00'), new Date('2026-09-07T12:00:00'));
+      vi.setSystemTime(new Date('2026-09-07T08:00:00'));
+      (scheduler as unknown as { tick: () => void }).tick();
+      expect(store.getDueReminders).toHaveBeenLastCalledWith(new Date('2026-09-07T08:00:00'), new Date('2026-09-07T08:00:00'));
+    } finally { scheduler.stop(); vi.useRealTimers(); }
+  });
+});

@@ -9,10 +9,13 @@ function isDestroyedError(error: unknown) {
 export class ReminderScheduler {
   private timer: NodeJS.Timeout | undefined;
   private stopped = false;
+  private lastTick: Date | null = null;
 
   constructor(private readonly store: TodoStore, private readonly window: BrowserWindow) {}
 
   start() {
+    if (this.timer) clearInterval(this.timer);
+    this.lastTick = null;
     this.stopped = false;
     this.tick();
     this.timer = setInterval(() => this.tick(), 10_000);
@@ -28,7 +31,12 @@ export class ReminderScheduler {
 
   private tick() {
     if (this.stopped) return;
-    for (const reminder of this.store.getDueReminders()) {
+    const now = new Date();
+    // A large polling gap means suspend/resume or a blocked process. Do not replay
+    // reminders from that gap, just as we do not replay them on a fresh launch.
+    const since = this.lastTick && now.getTime() - this.lastTick.getTime() <= 30_000 && now >= this.lastTick ? this.lastTick : now;
+    this.lastTick = now;
+    for (const reminder of this.store.getDueReminders(now, since)) {
       this.store.markReminderSent(reminder.id);
       const isEndReminder = reminder.kind === 'end';
       try {

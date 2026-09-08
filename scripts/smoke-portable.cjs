@@ -38,9 +38,10 @@ const delay = milliseconds => new Promise(resolve => setTimeout(resolve, millise
     await page.getByRole('dialog', { name: '欢迎使用 AI ToDo' }).waitFor();
     await page.getByRole('button', { name: '开始使用', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: '批量添加', exact: true }).click();
     await page.getByLabel('今天想完成什么？').fill('验证便携版');
     await page.getByRole('button', { name: '生成参考计划' }).click();
-    await page.getByRole('heading', { name: '这份安排合适吗？' }).waitFor();
+    await page.getByRole('heading', { name: '今天的任务' }).waitFor();
     assert.equal(await page.getByLabel('验证便携版 预计耗时（分钟）').inputValue(), '30');
     console.log('PASS: portable self-extraction, launch, real IPC and local 30-minute task generation');
   } finally {

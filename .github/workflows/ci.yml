@@ -27,6 +27,9 @@ jobs:
       - name: Unit and integration tests
         run: npm test
 
+      - name: SQLite migration and daily storage tests
+        run: npm run test:store
+
       - name: Lint
         run: npm run lint
 

@@ -6,6 +6,8 @@ export type Task = {
   title: string;
   duration: number;
   aiDuration?: number;
+  progress?: number;
+  completedAt?: string;
   priority: Priority;
   deadline?: string;
   doneDefinition: string;
@@ -176,6 +178,7 @@ export function buildSchedule(tasks: Task[], availability: AvailabilityBlock[], 
   const placements = new Map<string, ScheduleSegment[]>();
 
   for (const task of tasks) {
+    if (task.status === '已完成' || task.status === '已取消') continue;
     let remainingMinutes = task.duration;
     const segments: ScheduleSegment[] = [];
     while (remainingMinutes > 0 && blockIndex < blocks.length) {

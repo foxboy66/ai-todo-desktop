@@ -1,23 +1,16 @@
+import { AvailabilityEditor } from './AvailabilityEditor';
+import { AppShell } from './AppShell';
+import { Modal } from './Modal';
+import { Capture } from './TaskCapture';
+import { Execute } from './ExecutionView';
+import { moveTask } from '../shared/task-order';
+import { DailyList } from './DailyList';
+import { localDayText, scheduleStart, type DaySummary } from '../shared/daily';
+import type { PlanSnapshot } from '../shared/domain';
 import { defaultAiSettings, type AiSettings } from '../shared/ai-settings';
 import { AiSettingsForm } from './AiSettingsForm';
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  AlertCircle,
-  BellRing,
-  CalendarClock,
-  Check,
-  ChevronRight,
-  CircleDot,
-  Clock3,
-  Plus,
-  RotateCcw,
-  Settings2,
-  Sparkles,
-  Sprout,
-  Sun,
-  Trash2,
-  X,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertCircle, BellRing, ChevronRight, Sparkles, X } from 'lucide-react';
 import {
   buildSchedule,
   createDraftTask,
@@ -26,18 +19,16 @@ import {
   getCurrentScheduledTask,
   getReminderInterval,
   getScheduleOverflowTasks,
-  getScheduleSegments,
   getSecondsUntilTaskEnd,
   reflowScheduleFromTask,
   parseTime,
   type AvailabilityBlock,
-  type Priority,
   type ScheduledTask,
   type Task,
 } from "@/shared/domain";
 import { normalizeBlockerReason, shouldShowBlockerPrompt } from "./blocker";
 
-type View = "capture" | "review" | "execute";
+type View = "capture" | "execute" | "list";
 const reasons = [
   "耗时比预期更长",
   "临时事项打断",
@@ -50,24 +41,6 @@ const reasons = [
 function totalMinutes(tasks: Task[]) {
   return tasks.reduce((sum, task) => sum + task.duration, 0);
 }
-function minutesLabel(value: number) {
-  return `${Math.floor(value / 60)} 小时 ${value % 60} 分`;
-}
-function countdownLabel(seconds: number) {
-  const safe = Math.max(0, Math.round(seconds));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const remainingSeconds = safe % 60;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
-}
-function todayLabel() {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-  }).format(new Date());
-}
-
 function getNextPendingTask(schedule: ScheduledTask[], currentTaskId: string) {
   const currentIndex = schedule.findIndex((task) => task.id === currentTaskId);
   if (currentIndex < 0) return undefined;
@@ -104,81 +77,28 @@ function playReminderTone(audioContextRef: { current: AudioContext | null }) {
   }
 }
 
-function CatFriend() {
-  return (
-    <figure className="cat-companion">
-      <img className="cat-friend" src="./fluffy-cat.png" alt="陪伴你的小猫" width={1280} height={1280} decoding="async" />
-      <figcaption>
-        <strong>一点点，也在向前。</strong>
-        <p>我陪你，把今天慢慢过好。</p>
-      </figcaption>
-    </figure>
-  );
-}
-
-function Modal({
-  children,
-  onClose,
-  label,
-}: {
-  children: ReactNode;
-  onClose: () => void;
-  label: string;
-}) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    const previousFocus = document.activeElement as HTMLElement | null;
-    dialog?.showModal();
-    return () => {
-      dialog?.close();
-      previousFocus?.focus();
-    };
-  }, []);
-  return (
-    <dialog
-      ref={dialogRef}
-      className="modal"
-      aria-label={label}
-      onKeyDown={(event) => {
-        if (event.key !== "Tab") return;
-        const controls = Array.from(
-          event.currentTarget.querySelectorAll<HTMLElement>(
-            'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
-          ),
-        );
-        const first = controls[0],
-          last = controls[controls.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first?.focus();
-        }
-      }}
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
-    >
-      {children}
-    </dialog>
-  );
-}
-
 export function App() {
+  const [day, setDay] = useState(() => localDayText());
+  const dayRef = useRef(day);
+  const previousToday = useRef(localDayText());
+  const [days, setDays] = useState<DaySummary[]>([]);
+  const pendingSave = useRef<Promise<boolean>>(Promise.resolve(true));
+  const initialReadFailed = useRef(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [startupReady, setStartupReady] = useState(false);
   const [aiSettings, setAiSettings] = useState<AiSettings>(defaultAiSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [view, setView] = useState<View>("capture");
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [view, setView] = useState<View>("list");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [availability, setAvailability] = useState<AvailabilityBlock[]>(defaultAvailability);
   const [schedule, setSchedule] = useState<ScheduledTask[]>([]);
   const [taskInput, setTaskInput] = useState("");
-  const [notice, setNotice] = useState("本地数据已准备好。先输入今天想完成的事情。");
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
-  const [version, setVersion] = useState(0);
+  const [, setVersion] = useState(0);
   const [currentTaskId, setCurrentTaskId] = useState("");
   const [manuallySelectedTaskId, setManuallySelectedTaskId] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -204,8 +124,12 @@ export function App() {
       setNotice('AI 设置读取失败，请重新选择使用方式。任务仍可按默认 30 分钟生成。');
     });
     const planLoad = window.aiTodo
-      .load()
+      .load(dayRef.current)
       .then((state) => {
+        setAvailability(state.availability);
+        setConfirmed(state.confirmed);
+        setProgress(Object.fromEntries(state.tasks.map(task => [task.id, task.progress ?? (task.status === "已完成" ? 100 : 0)])));
+        void refreshDays();
         if (state.tasks.length) {
           const restoredSchedule = state.schedule.length
             ? state.schedule
@@ -230,11 +154,11 @@ export function App() {
               : null
           );
           setIsRunning(state.confirmed && Boolean(restoredCurrentTask));
-          setView(state.confirmed ? "execute" : "review");
+          setView("list");
           setNotice(`已恢复本地计划 v${state.version}`);
         }
       })
-      .catch(() => setNotice("暂时无法读取本地计划，但仍可继续编辑。"));
+      .catch(() => { initialReadFailed.current = true; setNotice("暂时无法读取本地计划。请点击回到今天重新读取，成功后再保存任务。"); });
     void Promise.all([settingsLoad, planLoad]).then(() => setStartupReady(true));
     return window.aiTodo.onReminder((reminder) => {
       const reminderKind =
@@ -304,15 +228,73 @@ export function App() {
     : 0;
   const nextTask = currentTask ? getNextPendingTask(schedule, currentTask.id) : undefined;
 
+  async function refreshDays() {
+    try { setDays(await window.aiTodo.listDays()); } catch { setNotice('日期记录读取失败，请稍后重试。'); }
+  }
+
+  function restoreState(state: PlanSnapshot, selectedDay = day) {
+    setTasks(state.tasks); setSchedule(state.schedule); setAvailability(state.availability);
+    setVersion(state.version); setConfirmed(state.confirmed);
+    setProgress(Object.fromEntries(state.tasks.map(task => [task.id, task.progress ?? (task.status === '已完成' ? 100 : 0)])));
+    setCurrentTaskId(state.tasks.find(task => task.status !== '已完成')?.id ?? state.tasks[0]?.id ?? '');
+    const restored = state.confirmed && selectedDay === localDayText() ? getCurrentScheduledTask(state.schedule) : undefined;
+    if (restored) setCurrentTaskId(restored.id);
+    setActiveTaskId(restored?.id ?? null); setIsRunning(Boolean(restored)); setPausedCountdownSeconds(null); setManuallySelectedTaskId(null);
+  }
+
+  async function changeDay(nextDay: string) {
+    if (!nextDay || loading) return;
+    setLoading(true);
+    try {
+      if (!await pendingSave.current) throw new Error('保存失败');
+      const state = await window.aiTodo.load(nextDay);
+      initialReadFailed.current = false;
+      dayRef.current = nextDay; setDay(nextDay); restoreState(state, nextDay);
+      setView('list'); setTaskInput(''); setBlockerOpen(false); setBlocker({}); setReminderAlert(null);
+      setNotice(nextDay === localDayText() ? '已打开今天的任务。其他日期的未完成任务仍保留在原日期。' : '正在查看 ' + nextDay + ' 的任务，可以编辑或手动移期。');
+      await refreshDays();
+    } catch { setNotice('切换日期失败，请先确认当前任务已保存，再重试。'); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => {
+    const today = localDayText(now);
+    if (today === previousToday.current || loading || !startupReady) return;
+    const wasToday = day === previousToday.current;
+    previousToday.current = today;
+    if (wasToday) void changeDay(today);
+  }, [now, day, loading, startupReady]);
+
+  useEffect(() => {
+    const focus = () => setNow(new Date());
+    window.addEventListener('focus', focus);
+    return () => window.removeEventListener('focus', focus);
+  }, []);
+
+  async function editListTask(id: string, patch: Partial<Task> | null, targetDay?: string) {
+    setLoading(true);
+    try {
+      if (!await pendingSave.current) throw new Error('保存失败');
+      const state = await window.aiTodo.updateTask({ day, taskId: id, patch, targetDay });
+      restoreState(state); await refreshDays();
+      setNotice(targetDay && targetDay !== day ? '任务已移到 ' + targetDay + '，请在目标日期重新确认排程。' : patch === null ? '任务已删除。' : state.confirmed ? '任务已保存。' : '任务已保存；如需定时提醒，请重新确认计划。');
+      return true;
+    } catch { setNotice('任务保存失败，内容仍保留，请重试。'); return false; }
+    finally { setLoading(false); }
+  }
+
+  async function quickAdd(title: string) {
+    setLoading(true);
+    const nextTasks = [...tasks, { ...createDraftTask(tasks.length), id: crypto.randomUUID(), title }];
+    const nextSchedule = buildSchedule(nextTasks, availability, scheduleStart(day));
+    const ok = await persistDraft(nextTasks, availability, nextSchedule);
+    if (ok) { setTasks(nextTasks); setSchedule(nextSchedule); setNotice('任务已保存，默认 30 分钟，可在编辑中修改。'); }
+    setLoading(false); return ok;
+  }
+
   function setStep(next: View) {
     setView(next);
-    setNotice(
-      next === "capture"
-        ? "修改任务和可用时段后，生成一份新的参考计划。"
-        : next === "review"
-          ? "这是草稿计划，确认后才会启动提醒。"
-          : "计划已确认，按照当前节奏继续推进。",
-    );
+    if (!initialReadFailed.current && !saveFailed) setNotice('');
   }
 
   function selectTask(id: string) {
@@ -326,26 +308,27 @@ export function App() {
     draftAvailability: AvailabilityBlock[],
     draftSchedule: ScheduledTask[],
   ) {
-    void window.aiTodo
-      .saveDraft({
-        tasks: draftTasks,
-        availability: draftAvailability,
-        schedule: draftSchedule,
-      })
-      .catch(() => setNotice("本地草稿保存失败，请检查后重试。"));
+    if (initialReadFailed.current) { setNotice('请先点击回到今天重新读取原有任务，再保存，避免覆盖本地数据。'); return Promise.resolve(false); }
+    const savingDay = day;
+    const save = pendingSave.current.then(() => window.aiTodo.saveDraft({ day: savingDay, tasks: draftTasks, availability: draftAvailability, schedule: draftSchedule }))
+      .then(async () => { setSaveFailed(false); setConfirmed(false); await refreshDays(); return true; })
+      .catch(() => { setSaveFailed(true); setNotice('本地草稿保存失败，请重试保存后再切换日期。'); return false; });
+    pendingSave.current = save;
+    return save;
   }
 
   async function generatePlan() {
     setLoading(true);
     try {
-      const result = await window.aiTodo.generatePlan({ rawText: taskInput, availability });
-      persistDraft(result.tasks, availability, result.schedule);
-      setTasks(result.tasks);
-      setSchedule(result.schedule);
-      setCurrentTaskId(result.tasks[0]?.id ?? "");
+      const result = await window.aiTodo.generatePlan({ day, rawText: taskInput, availability });
+      const allTasks = [...tasks, ...result.tasks.map(task => ({ ...task, id: crypto.randomUUID() }))];
+      const allSchedule = buildSchedule(allTasks, availability, scheduleStart(day));
+      if (!await persistDraft(allTasks, availability, allSchedule)) throw new Error('保存失败');
+      setTasks(allTasks); setSchedule(allSchedule); setTaskInput('');
+      setCurrentTaskId(allTasks[0]?.id ?? "");
       setActiveTaskId(null);
       setPausedCountdownSeconds(null);
-      setView("review");
+      setView("list");
       setNotice(result.source === 'ai'
         ? '已使用大模型估算耗时，并保存为本地草稿。'
         : result.source === 'fallback'
@@ -359,7 +342,10 @@ export function App() {
   }
 
   async function confirmPlan(reason?: string) {
-    const result = (await window.aiTodo.confirmPlan({ tasks, availability, schedule, reason })) as {
+    setLoading(true);
+    try {
+    if (!await pendingSave.current) throw new Error('保存失败');
+    const result = (await window.aiTodo.confirmPlan({ day, tasks, availability, schedule, reason })) as {
       schedule: ScheduledTask[];
       version: number;
     };
@@ -371,29 +357,41 @@ export function App() {
     setManuallySelectedTaskId(null);
     setIsRunning(Boolean(firstTask));
     setPausedCountdownSeconds(null);
-    setView("execute");
-    setNotice(`计划 v${result.version} 已确认，提醒节点已保存。`);
+    setConfirmed(true);
+    setView(day === localDayText() ? "execute" : "list");
+    if (day !== localDayText()) { setIsRunning(false); setActiveTaskId(null); }
+    setNotice('计划 v' + result.version + ' 已确认，提醒按 ' + day + ' 的时间生效。');
+    await refreshDays();
+    } catch { setNotice('确认计划失败，草稿仍保留，请重试。'); }
+    finally { setLoading(false); }
   }
 
   function updateTask(id: string, patch: Partial<Task>) {
     const nextTasks = tasks.map((task) => (task.id === id ? { ...task, ...patch } : task));
     const nextSchedule =
       patch.duration !== undefined
-        ? buildSchedule(nextTasks, availability)
+        ? buildSchedule(nextTasks, availability, scheduleStart(day))
         : schedule.map((task) => (task.id === id ? { ...task, ...patch } : task));
     setTasks(nextTasks);
     setSchedule(nextSchedule);
     persistDraft(nextTasks, availability, nextSchedule);
   }
-  function addTask() {
-    const task = createDraftTask(tasks.length);
-    const nextTasks = [...tasks, task];
-    const nextSchedule = buildSchedule(nextTasks, availability);
+  function reorderTask(id: string, targetIndex: number) {
+    if (loading) return;
+    const nextTasks = moveTask(tasks, id, targetIndex);
+    if (nextTasks === tasks) return;
+    const nextSchedule = buildSchedule(nextTasks, availability, scheduleStart(day));
     setTasks(nextTasks);
     setSchedule(nextSchedule);
-    persistDraft(nextTasks, availability, nextSchedule);
-    setNotice("已添加新计划并保存草稿，请补充任务名称、完成标准、优先级和耗时。");
+    setConfirmed(false);
+    setIsRunning(false);
+    setActiveTaskId(null);
+    setPausedCountdownSeconds(null);
+    void persistDraft(nextTasks, availability, nextSchedule).then(saved => {
+      if (saved) setNotice('任务顺序已保存，时间已按可用时段重新安排。确认计划后更新提醒。');
+    });
   }
+
   function removeTask(id: string) {
     const nextTasks = tasks.filter((task) => task.id !== id);
     const nextSchedule = schedule.filter((task) => task.id !== id);
@@ -431,49 +429,68 @@ export function App() {
         : "已修改任务时间并保存草稿，后续任务已顺延；确认后才会启动提醒。",
     );
   }
+  function removeAvailability(id: string) {
+    const nextAvailability = availability.filter(item => item.id !== id);
+    const nextSchedule = buildSchedule(tasks, nextAvailability, scheduleStart(day));
+    setAvailability(nextAvailability); setSchedule(nextSchedule);
+    persistDraft(tasks, nextAvailability, nextSchedule);
+  }
   function addAvailability() {
     const nextAvailability = [
       ...availability,
       { id: `slot-${Date.now()}`, start: "19:00", end: "20:00", kind: "available" as const },
     ];
     setAvailability(nextAvailability);
-    if (view === "review") persistDraft(tasks, nextAvailability, schedule);
+    const nextSchedule = buildSchedule(tasks, nextAvailability, scheduleStart(day));
+    setSchedule(nextSchedule);
+    persistDraft(tasks, nextAvailability, nextSchedule);
   }
   function updateAvailability(id: string, field: "start" | "end", value: string) {
     const nextAvailability = availability.map((slot) =>
       slot.id === id ? { ...slot, [field]: value } : slot,
     );
     setAvailability(nextAvailability);
-    if (view === "review") persistDraft(tasks, nextAvailability, schedule);
+    const nextSchedule = buildSchedule(tasks, nextAvailability, scheduleStart(day));
+    setSchedule(nextSchedule);
+    persistDraft(tasks, nextAvailability, nextSchedule);
   }
 
-  function updateProgress(value: number) {
-    if (!currentTask) return;
+  async function updateProgress(value: number) {
+    if (!currentTask || loading) return;
     if (activeTaskId !== currentTask.id && currentTask.status !== "已完成") {
       setNotice("请先完成当前执行中的任务，再同步后续任务进度。");
       return;
     }
-    setProgress((items) => ({ ...items, [currentTask.id]: value }));
-    void window.aiTodo.recordProgress({
+    setLoading(true);
+    try {
+    if (!await pendingSave.current) throw new Error("保存失败");
+    await window.aiTodo.recordProgress({
+      day,
       taskId: currentTask.id,
       eventType: `progress_${value}`,
       payload: { value },
     });
-    setNotice(`已记录 ${value}% 进度，后续提醒会根据当前状态调整。`);
+    setProgress((items) => ({ ...items, [currentTask.id]: value }));
+    setTasks(items => items.map(task => task.id === currentTask.id ? { ...task, progress: value, status: value === 100 ? '已完成' : '部分完成' } : task));
+    setSchedule(items => items.map(task => task.id === currentTask.id ? { ...task, progress: value, status: value === 100 ? '已完成' : '部分完成' } : task));
+    await refreshDays();
+    setNotice('已记录 ' + value + '% 进度。'); return true;
+    } catch { setNotice('进度保存失败，请重试。'); return false; }
+    finally { setLoading(false); }
   }
 
-  function completeTask() {
+  async function completeTask() {
     if (!currentTask) return;
     if (activeTaskId !== currentTask.id) {
       setNotice("请先完成当前执行中的任务，再进入后续任务。");
       return;
     }
-    updateProgress(100);
+    if (!await updateProgress(100)) return;
     const completedTasks = tasks.map((task) =>
-      task.id === currentTask.id ? { ...task, status: "已完成" as const } : task,
+      task.id === currentTask.id ? { ...task, status: "已完成" as const, progress: 100, completedAt: new Date().toISOString() } : task,
     );
     const completedSchedule = schedule.map((task) =>
-      task.id === currentTask.id ? { ...task, status: "已完成" as const } : task,
+      task.id === currentTask.id ? { ...task, status: "已完成" as const, progress: 100, completedAt: new Date().toISOString() } : task,
     );
     setTasks(completedTasks);
     setSchedule(completedSchedule);
@@ -488,10 +505,17 @@ export function App() {
     }
   }
 
-  function startNextTask() {
-    if (!currentTask || !nextTask) return;
+  async function startNextTask() {
+    if (!currentTask || !nextTask || loading) return;
+    setLoading(true);
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const nextSchedule = reflowScheduleFromTask(schedule, nextTask.id, nowMinutes, nextTask.duration);
+    try {
+      if (!await pendingSave.current) throw new Error('保存失败');
+      const state = await window.aiTodo.confirmPlan({ day, tasks, availability, schedule: nextSchedule, reason: '开始下一任务' });
+      setVersion(state.version);
+    } catch { setNotice('开始任务失败，请重试。'); return; }
+    finally { setLoading(false); }
     setSchedule(nextSchedule);
     setCurrentTaskId(nextTask.id);
     setActiveTaskId(nextTask.id);
@@ -505,7 +529,7 @@ export function App() {
     const normalizedReason = normalizeBlockerReason(reason);
     if (!currentTask || !normalizedReason) return;
     const suggestion = await window.aiTodo.suggestReplan({
-      tasks,
+      day, tasks,
       availability,
       currentTaskId: currentTask.id,
       reason: normalizedReason,
@@ -523,23 +547,26 @@ export function App() {
     setBlockerOpen(false);
     setCustomReason("");
     setNotice("已生成新的重排草稿，确认后才会更新提醒和今日时间线。");
-    setView("review");
+    setView("list");
   }
 
   async function clearData() {
+    await pendingSave.current;
     await window.aiTodo.clearData();
+    pendingSave.current = Promise.resolve(true); initialReadFailed.current = false; setSaveFailed(false); setIsRunning(false);
+    setDays([]); setConfirmed(false);
     setTasks([]);
     setSchedule([]);
     setAvailability(defaultAvailability);
     setVersion(0);
     setActiveTaskId(null);
     setProgress({});
-    setView("capture");
+    setView("list");
+    setSettingsOpen(false); setClearConfirmOpen(false);
     setAiSettings(defaultAiSettings);
     setNotice("本地数据已删除。");
   }
 
-  if (!currentTask && view === "execute") setStep("capture");
   if (!startupReady) return <div className="startup-screen" role="status">正在读取本地计划…</div>;
 
   return (
@@ -550,80 +577,14 @@ export function App() {
           setSettingsOpen(false);
           setNotice(saved.enabled ? "已启用大模型估时，下次生成任务时生效。" : "已切换为本地模式，新任务默认 30 分钟。已有任务保持原耗时。");
         }} />
+        {aiSettings.setupCompleted && <details className="data-settings"><summary>本地数据管理</summary><p>任务和设置只保存在这台设备上。</p><button className="danger-button" disabled={loading} onClick={() => { setSettingsOpen(false); setClearConfirmOpen(true); }}>删除全部本地数据</button></details>}
       </Modal>}
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">
-            <Sprout size={24} />
-          </span>
-          <div>
-            <strong>AI ToDo</strong>
-            <small>让每一天，慢慢开花</small>
-          </div>
-        </div>
-        <nav className="step-nav" aria-label="主要流程">
-          {(
-            [
-              ["capture", "录入任务", "01"],
-              ["review", "确认计划", "02"],
-              ["execute", "执行跟进", "03"],
-            ] as Array<[View, string, string]>
-          ).map(([id, label, number]) => (
-            <button
-              key={id}
-              className={view === id ? "step active" : "step"}
-              aria-current={view === id ? "step" : undefined}
-              onClick={() => setStep(id)}
-            >
-              <span>{number}</span>
-              {label}
-              {view === id && <ChevronRight size={16} />}
-            </button>
-          ))}
-        </nav>
-        <CatFriend />
-        <div className="sidebar-note">
-          <span className="status-dot" />
-          <strong>安心存在这台设备</strong>
-          <p>任务、计划和执行记录保存在本地。</p>
-        </div>
-        <button className="quiet-button" onClick={() => void clearData()}>
-          <Trash2 size={15} />
-          删除全部本地数据
-        </button>
-      </aside>
-
-      <main className="main-content">
-        <header className="topbar">
-          <div className="date">
-            <CalendarClock size={17} />
-            {todayLabel()}
-            <span className="date-divider" />
-            <span className="available-summary">
-              可用：
-              {availability.map((slot) => `${slot.start}–${slot.end}`).join("、") || "尚未设置"}
-            </span>
-          </div>
-          <div className="top-actions">
-            <span className="local-pill" aria-label="当前估时模式">
-              <span className="status-dot" />
-              {aiSettings.enabled ? '大模型估时' : '本地模式'}
-            </span>
-            <button className="secondary ai-settings-button" disabled={loading} onClick={() => setSettingsOpen(true)} title="重新选择是否使用大模型并配置 API Key">
-              <Sparkles size={16} />
-              大模型设置
-            </button>
-            <button
-              className="icon-button"
-              title="设置可用时段"
-              aria-label="设置可用时段"
-              onClick={() => setStep("capture")}
-            >
-              <Settings2 size={17} />
-            </button>
-          </div>
-        </header>
+      {availabilityOpen && <Modal label="可用时段" onClose={() => setAvailabilityOpen(false)}><h2>设置可用时段</h2><p>修改后自动保存为草稿并重新排程，确认计划后更新提醒。</p><AvailabilityEditor availability={availability} onAdd={addAvailability} onUpdate={updateAvailability} onRemove={removeAvailability} /><div className="modal-actions"><button className="primary" onClick={() => setAvailabilityOpen(false)}>完成设置</button></div></Modal>}
+      {clearConfirmOpen && <Modal label="删除全部本地数据" onClose={() => setClearConfirmOpen(false)}><h2>删除全部本地数据？</h2><p>将删除所有日期的任务、计划、进度和大模型设置。此操作无法撤销。</p><div className="modal-actions"><button className="secondary" onClick={() => setClearConfirmOpen(false)}>取消删除</button><button className="danger-button" disabled={loading} onClick={() => void clearData()}>确认删除全部数据</button></div></Modal>}
+      <AppShell view={view} day={day} today={localDayText(now)} days={days} busy={loading} confirmed={confirmed} taskCount={tasks.length}
+        aiEnabled={aiSettings.enabled} onNavigate={setStep} onDay={next => void changeDay(next)} onSettings={() => setSettingsOpen(true)}>
         <div className="content-wrap">
+
           <div className={notice ? "notice" : "notice empty"} role="status" aria-live="polite">
             {notice && (
               <>
@@ -662,8 +623,16 @@ export function App() {
               </button>
             </div>
           )}
+          {saveFailed && <button className="secondary" disabled={loading} onClick={() => void persistDraft(tasks, availability, schedule)}>重试保存当前任务</button>}
+          <fieldset className="work-area" disabled={loading}>
+          {view === 'list' && <DailyList key={day} day={day} today={localDayText(now)} tasks={tasks} busy={loading} onAdd={quickAdd} onUpdate={editListTask}
+            onConfirm={() => void confirmPlan()} onAvailability={() => setAvailabilityOpen(true)}
+            plan={{ tasks, schedule, availability, onUpdateTask: updateTask, onUpdateTime: updateTime, onRemoveTask: removeTask, onReorderTask: reorderTask }}
+            onCapture={() => setStep('capture')} confirmed={confirmed} onExecute={() => setStep('execute')} />}
           {view === "capture" && (
             <Capture
+              onBack={() => setStep("list")}
+              day={day}
               tasks={tasks}
               availability={availability}
               taskInput={taskInput}
@@ -673,26 +642,10 @@ export function App() {
               onGenerate={() => void generatePlan()}
               onAddAvailability={addAvailability}
               onUpdateAvailability={updateAvailability}
-              onRemoveAvailability={(id) =>
-                setAvailability((items) => items.filter((item) => item.id !== id))
-              }
+              onRemoveAvailability={removeAvailability}
             />
           )}
-          {view === "review" && (
-            <Review
-              tasks={tasks}
-              schedule={schedule}
-              availability={availability}
-              version={version}
-              onUpdateTask={updateTask}
-              onAddTask={addTask}
-              onUpdateTime={updateTime}
-              onRemoveTask={removeTask}
-              onConfirm={() => void confirmPlan()}
-              onBack={() => setStep("capture")}
-            />
-          )}
-          {view === "execute" && currentTask && (
+          {view === "execute" && day === localDayText(now) && confirmed && currentTask && (
             <Execute
               schedule={schedule}
               currentTask={currentTask}
@@ -725,11 +678,13 @@ export function App() {
                 setCustomReason("");
                 setBlockerOpen(true);
               }}
-              onReview={() => setStep("review")}
+              onReview={() => setStep("list")}
             />
           )}
+          {view === 'execute' && (day !== localDayText(now) || !confirmed || !currentTask) && <section className="empty-state execution-empty"><h1>执行跟进</h1><p>{day !== localDayText(now) ? '执行跟进用于今天的任务。可返回今天，或先为这一天制定计划。' : !tasks.length ? '先添加任务，再安排时间开始执行。' : '计划尚未确认。请先检查任务时间并确认。'}</p><button className="primary" onClick={() => day !== localDayText(now) ? void changeDay(localDayText(now)) : setStep('list')}>{day !== localDayText(now) ? '打开今天的任务' : tasks.length ? '返回任务清单' : '添加第一项任务'}</button></section>}
+          </fieldset>
         </div>
-      </main>
+      </AppShell>
 
       {shouldShowBlockerPrompt(view, blockerOpen, blocker.reason) && (
         <Modal label="现在遇到了什么情况？" onClose={() => setBlockerOpen(false)}>
@@ -811,585 +766,5 @@ export function App() {
         </Modal>
       )}
     </div>
-  );
-}
-
-function Capture({
-  tasks,
-  availability,
-  taskInput,
-  plannedMinutes,
-  loading,
-  onInput,
-  onGenerate,
-  onAddAvailability,
-  onUpdateAvailability,
-  onRemoveAvailability,
-}: {
-  tasks: Task[];
-  availability: AvailabilityBlock[];
-  taskInput: string;
-  plannedMinutes: number;
-  loading: boolean;
-  onInput: (value: string) => void;
-  onGenerate: () => void;
-  onAddAvailability: () => void;
-  onUpdateAvailability: (id: string, field: "start" | "end", value: string) => void;
-  onRemoveAvailability: (id: string) => void;
-}) {
-  return (
-    <section>
-      <div className="heading-row">
-        <div>
-          <span className="eyebrow">
-            <Sun size={16} />
-            今天也从容一点
-          </span>
-          <h1>把今天，安排得刚刚好。</h1>
-          <p>写下想做的事，一步一步安排好。无需 API Key 也能使用。</p>
-        </div>
-        <span className="heading-meta">
-          <BellRing size={14} />
-          确认计划后，才会开启提醒
-        </span>
-      </div>
-      <div className="capture-grid">
-        <div className="surface">
-          <div className="section-title">
-            <Clock3 size={17} />
-            今天什么时候有空？
-            <button className="link-button" onClick={onAddAvailability}>
-              <Plus size={15} />
-              添加时段
-            </button>
-          </div>
-          <div className="availability-list">
-            {availability.map((slot, index) => (
-              <div className="availability-row" key={slot.id}>
-                <span>时段 {index + 1}</span>
-                <input
-                  type="time"
-                  value={slot.start}
-                  aria-label={`时段 ${index + 1} 开始时间`}
-                  onChange={(event) => onUpdateAvailability(slot.id, "start", event.target.value)}
-                />
-                <b>至</b>
-                <input
-                  type="time"
-                  value={slot.end}
-                  aria-label={`时段 ${index + 1} 结束时间`}
-                  onChange={(event) => onUpdateAvailability(slot.id, "end", event.target.value)}
-                />
-                <button
-                  className="remove-button"
-                  disabled={availability.length <= 1}
-                  onClick={() => onRemoveAvailability(slot.id)}
-                  aria-label={`删除时段 ${index + 1}`}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="divider" />
-          <label className="field-label" htmlFor="task-input">
-            <strong>今天想完成什么？</strong>
-            <span className="field-hint">（支持用分号或换行分隔多个任务）</span>
-          </label>
-          <textarea
-            id="task-input"
-            maxLength={5000}
-            value={taskInput}
-            onChange={(event) => onInput(event.target.value)}
-            placeholder="例如：准备周会材料；回复客户邮件；跑步 30 分钟"
-          />
-          <div className="form-footer">
-            <button
-              className="primary"
-              onClick={onGenerate}
-              disabled={loading || !taskInput.trim()}
-            >
-              {loading ? (
-                "正在整理…"
-              ) : (
-                <>
-                  <Sparkles size={16} />
-                  生成参考计划
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-        <aside className="ai-preview">
-          <div className="ai-preview-head">
-            <div>
-              <strong>任务预览</strong>
-              <small>当前任务参考，生成后可逐项修改</small>
-            </div>
-            <span>{tasks.length} 项</span>
-          </div>
-          <div className="preview-items">
-            {tasks.slice(0, 5).map((task) => (
-              <div key={task.id}>
-                <i data-priority={task.priority}>{task.priority}</i>
-                <span>{task.title}</span>
-                <b>{task.duration} 分</b>
-              </div>
-            ))}
-          </div>
-          <p>
-            <Sparkles size={14} />
-            当前估计共需 <strong>{minutesLabel(plannedMinutes)}</strong>，排程会避开不可用时间。
-          </p>
-        </aside>
-      </div>
-      <p className="capture-footnote">
-        <Sprout size={14} />
-        计划里，也可以留一点休息的时间。
-      </p>
-    </section>
-  );
-}
-
-function ScheduleTime({
-  task,
-  onUpdateTime,
-}: {
-  task: ScheduledTask;
-  onUpdateTime: (id: string, field: "start" | "end", value: string) => void;
-}) {
-  const segments = getScheduleSegments(task);
-  const startValue = task.startMinutes !== null ? task.startLabel : "";
-  const endValue = task.endMinutes !== null ? task.endLabel : "";
-  return (
-    <div className={task.scheduled ? undefined : "manual-time"}>
-      {segments.length > 1 && <><small>跨可用时段</small><small>编辑后按连续时间重排</small></>}
-      <div>
-        <input
-          type="time"
-          value={startValue}
-          onChange={(event) => onUpdateTime(task.id, "start", event.target.value)}
-          aria-label={task.title + " 开始时间"}
-        />
-        <span>至</span>
-        <input
-          type="time"
-          value={endValue}
-          onChange={(event) => onUpdateTime(task.id, "end", event.target.value)}
-          aria-label={task.title + " 结束时间"}
-        />
-      </div>
-      {!task.scheduled && <small>手动安排</small>}
-    </div>
-  );
-}
-function Review({
-  tasks,
-  schedule,
-  availability,
-  version,
-  onUpdateTask,
-  onAddTask,
-  onUpdateTime,
-  onRemoveTask,
-  onConfirm,
-  onBack,
-}: {
-  tasks: Task[];
-  schedule: ScheduledTask[];
-  availability: AvailabilityBlock[];
-  version: number;
-  onUpdateTask: (id: string, patch: Partial<Task>) => void;
-  onAddTask: () => void;
-  onUpdateTime: (id: string, field: "start" | "end", value: string) => void;
-  onRemoveTask: (id: string) => void;
-  onConfirm: () => void;
-  onBack: () => void;
-}) {
-  const unscheduled = schedule.filter((task) => !task.scheduled).length;
-  const overflowTasks = getScheduleOverflowTasks(schedule, availability);
-  return (
-    <section>
-      <div className="heading-row">
-        <div>
-          <span className="eyebrow">参考计划 · 草稿{version ? ` · v${version + 1}` : ""}</span>
-          <h1>这份安排合适吗？</h1>
-          <p>耗时和排程都可修改，最终时间由你确认。</p>
-        </div>
-        <div className="heading-buttons">
-          <button className="secondary" onClick={onAddTask}>
-            <Plus size={16} />
-            添加计划
-          </button>
-          <button className="secondary" onClick={onBack}>
-            <RotateCcw size={16} />
-            重新录入
-          </button>
-          <button className="primary" onClick={onConfirm}>
-            确认并开始
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-      <div className="review-grid">
-        <div className="surface table-surface">
-          <div className="table-head">
-            <span>时间</span>
-            <span>任务与完成标准</span>
-            <span>优先级</span>
-            <span>耗时 / 操作</span>
-          </div>
-          {!schedule.length && (
-            <div className="empty-state">
-              <Sprout size={24} />
-              <p>还没有任务，先添加一项想完成的事。</p>
-              <button className="secondary" onClick={onAddTask}>
-                <Plus size={16} />
-                添加第一项计划
-              </button>
-            </div>
-          )}
-          {schedule.map((task) => (
-            <div className="task-row" key={task.id}>
-              <div className="time-cell">
-                <ScheduleTime task={task} onUpdateTime={onUpdateTime} />
-              </div>
-              <div className="task-main">
-                <input
-                  className="task-title-input"
-                  value={task.title}
-                  onChange={(event) => onUpdateTask(task.id, { title: event.target.value })}
-                  aria-label={`${task.title} 任务名称`}
-                />
-                <input
-                  className="task-definition-input"
-                  value={task.doneDefinition}
-                  onChange={(event) =>
-                    onUpdateTask(task.id, { doneDefinition: event.target.value })
-                  }
-                  aria-label={`${task.title} 完成标准`}
-                />
-              </div>
-              <div className="priority-cell">
-                <select
-                  value={task.priority}
-                  data-priority={task.priority}
-                  onChange={(event) =>
-                    onUpdateTask(task.id, { priority: event.target.value as Priority })
-                  }
-                  aria-label={`${task.title} 优先级`}
-                >
-                  <option>高</option>
-                  <option>中</option>
-                  <option>低</option>
-                </select>
-              </div>
-              <div className="task-actions">
-                <input
-                  type="number"
-                  min="1"
-                  step="5"
-                  value={task.duration}
-                  aria-label={`${task.title} 预计耗时（分钟）`}
-                  onChange={(event) =>
-                    onUpdateTask(task.id, {
-                      duration: Math.max(1, Number(event.target.value) || 1),
-                    })
-                  }
-                />
-                <span>分</span>
-                <button
-                  className="remove-button"
-                  onClick={() => onRemoveTask(task.id)}
-                  aria-label={`删除${task.title}`}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-        <aside className="review-aside">
-          <div className="dark-card">
-            <Sparkles size={18} />
-            <h3>排程说明</h3>
-            <p>
-              任务会按顺序跨可用时段累计执行；不可用时段自动暂停，不创建提醒。不同任务直接衔接，
-              所有时间冲突都会明确展示。
-            </p>
-            <div className="stat-row">
-              <div>
-                <strong>{schedule.filter((task) => task.scheduled).length}</strong>
-                <small>已安排任务</small>
-              </div>
-              <div>
-                <strong>
-                  {Math.floor(tasks.reduce((sum, task) => sum + task.duration, 0) / 60)}h
-                </strong>
-                <small>专注时间</small>
-              </div>
-            </div>
-          </div>
-          <div className={unscheduled || overflowTasks.length ? "warning-card" : "info-card"}>
-            <AlertCircle size={17} />
-            <div>
-              <strong>
-                {unscheduled
-                  ? unscheduled + " 项任务暂未安排"
-                  : overflowTasks.length
-                    ? overflowTasks.length + " 项任务超出今日可用时段"
-                    : "当前没有时间冲突"}
-              </strong>
-              <p>
-                {unscheduled
-                  ? "可以减少耗时、增加可用时段，或确认后稍后处理。"
-                  : overflowTasks.length
-                    ? "已按任务耗时继续往后排，请确认是否接受今天可用时段之外的执行时间。"
-                    : "修改会自动保存为本地草稿，确认后才会创建和启动提醒节点。"}
-              </p>
-            </div>
-          </div>
-          <div className="info-card">
-            <BellRing size={17} />
-            <div>
-              <strong>提醒规则透明</strong>
-              <p>30 分钟以内不设置中途检查点；更长任务按 30～60 分钟间隔检查。</p>
-            </div>
-          </div>
-        </aside>
-      </div>
-    </section>
-  );
-}
-
-function Execute({
-  schedule,
-  currentTask,
-  progress,
-  countdownSeconds,
-  countdownTotalSeconds,
-  isActiveTask,
-  isRunning,
-  reminderInterval,
-  pausedCountdownSeconds,
-  nextTask,
-  onSelect,
-  onProgress,
-  onComplete,
-  onToggleRunning,
-  onStartNext,
-  onBlocker,
-  onReview,
-}: {
-  schedule: ScheduledTask[];
-  currentTask: ScheduledTask;
-  progress: number;
-  countdownSeconds: number;
-  countdownTotalSeconds: number;
-  isActiveTask: boolean;
-  isRunning: boolean;
-  reminderInterval: number | null;
-  pausedCountdownSeconds: number | null;
-  nextTask?: ScheduledTask;
-  onSelect: (id: string) => void;
-  onProgress: (value: number) => void;
-  onComplete: () => void;
-  onToggleRunning: () => void;
-  onStartNext: () => void;
-  onBlocker: () => void;
-  onReview: () => void;
-}) {
-  const upcoming = schedule
-    .filter((task) => task.id !== currentTask.id && task.scheduled && task.status !== "已完成")
-    .slice(0, 3);
-  const countdownProgress = countdownTotalSeconds > 0 ? countdownSeconds / countdownTotalSeconds : 0;
-  return (
-    <section>
-      <div className="heading-row">
-        <div>
-          <span className="eyebrow">今日执行台</span>
-          <h1>按现在的节奏继续</h1>
-          <p>当前任务进度 {progress}%，完成后再衔接下一项。</p>
-        </div>
-        <button className="secondary" onClick={onReview}>
-          <Settings2 size={16} />
-          查看完整计划
-        </button>
-      </div>
-      <div className="execute-grid">
-        <aside className="surface timeline">
-          <div className="section-title">
-            <div>
-              <strong>今天的节奏</strong>
-              <small>
-                {schedule.length} 项任务 ·{" "}
-                {schedule.filter((task) => task.scheduled).length ? "已安排" : "待安排"}
-              </small>
-            </div>
-            <CalendarClock size={18} />
-          </div>
-          <div className="timeline-items">
-            {schedule.map((task) => (
-              <button
-                key={task.id}
-                className={
-                  task.id === currentTask.id
-                    ? "timeline-item active"
-                    : task.status === "已完成"
-                      ? "timeline-item done"
-                      : "timeline-item"
-                }
-                onClick={() => onSelect(task.id)}
-              >
-                <span className="timeline-dot">
-                  {task.status === "已完成" && <Check size={11} />}
-                </span>
-                <span>
-                  <small>{task.startLabel}</small>
-                  <strong>{task.title}</strong>
-                </span>
-              </button>
-            ))}
-          </div>
-        </aside>
-        <div className="focus-card">
-          <div className="focus-orbit one" />
-          <div className="focus-orbit two" />
-          <div className="focus-content">
-            <div className="focus-top">
-              <div>
-                <span className="focus-kicker">
-                  <CircleDot size={14} />
-                  {isActiveTask ? "正在执行" : currentTask.status === "已完成" ? "已完成" : "等待前置任务"}
-                </span>
-                <h2>{currentTask.title}</h2>
-                <p>完成标准：{currentTask.doneDefinition}</p>
-              </div>
-              <span className="time-chip">{formatScheduleLabel(currentTask)}</span>
-            </div>
-            <div className="progress-area">
-              <div
-                className="progress-ring"
-                role="progressbar"
-                aria-label="当前任务进度"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={progress}
-                style={{
-                  background: `conic-gradient(var(--green) ${progress * 3.6}deg, #d5e3cb 0deg)`,
-                }}
-              >
-                <div>
-                  <strong>{progress}%</strong>
-                  <small>已同步进度</small>
-                </div>
-              </div>
-              <div
-                className="countdown-ring"
-                role="timer"
-                aria-label="任务倒计时"
-                aria-live="polite"
-                style={{
-                  background: `conic-gradient(var(--green) ${countdownProgress * 360}deg, #d5e3cb 0deg)`,
-                }}
-              >
-                <div>
-                  <strong>{countdownLabel(countdownSeconds)}</strong>
-                  <small>
-                    {currentTask.status === "已完成"
-                      ? "任务已完成"
-                      : pausedCountdownSeconds !== null
-                        ? "倒计时已暂停"
-                        : isRunning
-                          ? isActiveTask
-                            ? "任务倒计时"
-                            : "等待前置任务"
-                          : "等待开始"}
-                  </small>
-                </div>
-              </div>
-            </div>
-            <div className="progress-copy">
-              <div className="progress-track">
-                <i style={{ width: `${progress}%` }} />
-              </div>
-              <div className="reminder-card">
-                <BellRing size={16} />
-                <div>
-                  <strong>
-                    {reminderInterval ? `每 ${reminderInterval} 分钟同步一次` : "不设置中途提醒"}
-                  </strong>
-                  <small>你可以在任何时候手动同步状态。</small>
-                </div>
-              </div>
-            </div>
-            <div className="quick-label">快速同步</div>
-            <div className="quick-actions">
-              {[25, 50, 75].map((value) => (
-                <button
-                  key={value}
-                  className={progress === value ? "selected" : ""}
-                  onClick={() => onProgress(value)}
-                >
-                  完成 {value}%
-                </button>
-              ))}
-              <button className="danger-quick" onClick={onBlocker}>
-                遇到阻碍
-              </button>
-            </div>
-            <div className="focus-footer">
-              {currentTask.status === "已完成" && nextTask ? (
-                <button className="primary light" onClick={onStartNext}>
-                  <ChevronRight size={17} />
-                  开始下一任务
-                </button>
-              ) : (
-                <>
-                  <button className="secondary" onClick={onToggleRunning}>
-                    {isRunning ? "暂停任务" : "继续任务"}
-                  </button>
-                  <button className="primary light" onClick={onComplete}>
-                    <Check size={17} />
-                    标记为已完成
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-        <aside className="execute-aside">
-          <div className="surface upcoming">
-            <div className="section-title">
-              <div>
-                <strong>接下来</strong>
-                <small>根据当前计划自动衔接</small>
-              </div>
-              <Clock3 size={18} />
-            </div>
-            {upcoming.map((task) => (
-              <div className="upcoming-item" key={task.id}>
-                <span>{task.startLabel}</span>
-                <div>
-                  <strong>{task.title}</strong>
-                  <small>{task.duration} 分钟</small>
-                </div>
-              </div>
-            ))}
-            {!upcoming.length && (
-              <p className="empty-state">没有其他待执行的安排，专心做好眼前这一件。</p>
-            )}
-          </div>
-          <div className="why-card">
-            <Sparkles size={16} />
-            <strong>为什么这样提醒？</strong>
-            <p>
-              确认耗时为 {currentTask.duration} 分钟，因此采用
-              {reminderInterval ? `每 ${reminderInterval} 分钟` : "仅结束时"}的检查节奏。
-            </p>
-          </div>
-        </aside>
-      </div>
-    </section>
   );
 }

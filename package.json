@@ -1,6 +1,6 @@
 {
   "name": "ai-todo-desktop",
-  "version": "0.2.3",
+  "version": "0.5.0",
   "private": true,
   "description": "AI 个性化 ToDo 本地优先桌面应用",
   "main": "dist/main/main.js",
@@ -15,10 +15,11 @@
     "test:ui": "playwright test",
     "lint": "oxlint src gateway tests e2e playwright.config.ts",
     "postinstall": "electron-builder install-app-deps",
-    "verify": "npm run typecheck && npm test && npm run lint && npm run test:ui",
+    "verify": "npm run typecheck && npm test && npm run test:store && npm run lint && npm run test:ui",
     "dist:win": "npm run verify && npm run build && electron-builder --win nsis portable --x64 --publish never && node scripts/release-checksums.cjs",
     "pack:win": "npm run build && electron-builder --win --x64 --dir --publish never",
-    "test:desktop": "node scripts/smoke-desktop.cjs"
+    "test:desktop": "node scripts/smoke-desktop.cjs",
+    "test:store": "npm run build:main && node scripts/test-store.cjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",

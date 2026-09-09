@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI ToDo · 今日执行台</title>
+    <script>
+      const savedTheme = localStorage.getItem('ai-todo-theme');
+      document.documentElement.dataset.theme =
+        savedTheme === 'dark' || savedTheme === 'light'
+          ? savedTheme
+          : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    </script>
   </head>
   <body>
     <div id="root"></div>

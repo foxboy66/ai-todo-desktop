@@ -584,6 +584,22 @@ test('explicit top-right AI settings button remains available while executing an
   expect(errors).toEqual([]);
 });
 
+test('theme switch uses the toggle origin and remembers the selected theme', async ({ page }, info) => {
+  const { errors } = await boot(page, { view: 'list' });
+  const toggle = page.getByRole('button', { name: '切换到深色主题', exact: true });
+  await toggle.click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('ai-todo-theme'))).toBe('dark');
+  await expect.poll(() => page.locator('html').evaluate(element => getComputedStyle(element).getPropertyValue('--theme-radius'))).toMatch(/px/);
+  await capture(page, info, 'dark-theme');
+  await page.reload();
+  await page.locator('.startup-screen').waitFor({ state: 'detached' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.getByRole('button', { name: '切换到浅色主题', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  expect(errors).toEqual([]);
+});
+
 test('daily list saves completion, supports undo and keeps yesterday separate after reload', async ({ page }, info) => {
   const { errors } = await boot(page);
   await page.locator('.sidebar').getByRole('button', { name: '任务清单' }).click();

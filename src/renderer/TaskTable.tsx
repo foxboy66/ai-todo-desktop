@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useRef, useState, type DragEvent, type PointerEvent } from 'react';
 import { AlertCircle, ArrowDown, ArrowUp, GripVertical, Trash2 } from 'lucide-react';
 import { getScheduleSegments, getScheduleOverflowTasks, type Task, type ScheduledTask, type AvailabilityBlock, type Priority } from '../shared/domain';
 function ScheduleTime({
@@ -45,30 +45,85 @@ export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdat
   pendingChecks: Record<string, boolean>; onMoveToday?: (task: Task) => void;
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; position: 'before' | 'after'; index: number } | null>(null);
+  const dropTargetRef = useRef<typeof dropTarget>(null);
   const unscheduled = schedule.filter((task) => !task.scheduled && task.status !== "已完成").length;
   const overflowTasks = getScheduleOverflowTasks(schedule, availability);
+
+  function getDropPosition(clientY: number, rect: DOMRect, sourceIndex: number, hoveredIndex: number) {
+    const ratio = (clientY - rect.top) / rect.height;
+    if (ratio < .35) return 'before' as const;
+    if (ratio > .65) return 'after' as const;
+    return sourceIndex > hoveredIndex ? 'before' as const : 'after' as const;
+  }
+
+  function updateDropTarget(task: ScheduledTask, clientY: number) {
+    const row = document.querySelector<HTMLElement>(`.task-row[data-task-id="${CSS.escape(task.id)}"]`);
+    if (!row || !draggingId || draggingId === task.id) return;
+    const rect = row.getBoundingClientRect();
+    const sourceIndex = schedule.findIndex(item => item.id === draggingId);
+    const hoveredIndex = schedule.findIndex(item => item.id === task.id);
+    const position = getDropPosition(clientY, rect, sourceIndex, hoveredIndex);
+    const slot = hoveredIndex + (position === 'after' ? 1 : 0);
+    const index = Math.max(0, Math.min(schedule.length - 1, slot > sourceIndex ? slot - 1 : slot));
+    const target = { id: task.id, position, index } as const;
+    dropTargetRef.current = target;
+    setDropTarget(target);
+  }
+
+  function finishDrag() {
+    if (draggingId && dropTargetRef.current) onReorderTask(draggingId, dropTargetRef.current.index);
+    setDraggingId(null);
+    dropTargetRef.current = null;
+    setDropTarget(null);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>, task: ScheduledTask) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    if (draggingId) updateDropTarget(task, event.clientY);
+  }
+
+  function handleTouchStart(event: PointerEvent<HTMLSpanElement>, taskId: string) {
+    if (event.pointerType !== 'touch') return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDraggingId(taskId);
+  }
+
+  function handleTouchMove(event: PointerEvent<HTMLSpanElement>) {
+    if (event.pointerType !== 'touch' || !draggingId) return;
+    const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('.task-row');
+    const targetTask = row ? schedule.find(task => task.id === row.dataset.taskId) : undefined;
+    if (targetTask) updateDropTarget(targetTask, event.clientY);
+  }
+
   return (
     <section>
       <div className="review-grid">
         <div className="surface table-surface">
           <div className="table-head"><span /><span>任务与完成标准</span><span>时间</span><span>优先级</span><span>耗时 / 操作</span></div>
-          {visibleTasks.map(item => { const index = schedule.findIndex(task => task.id === item.id); const task = schedule[index]; if (!task) return null; return (
+          {visibleTasks.map(item => { const index = schedule.findIndex(task => task.id === item.id); const task = schedule[index]; if (!task) return null; const showBefore = dropTarget?.id === task.id && dropTarget.position === 'before'; const showAfter = dropTarget?.id === task.id && dropTarget.position === 'after'; return (
+            <Fragment key={task.id}>
+            {showBefore && <div className="task-drop-placeholder" aria-hidden="true"><span>放在这里</span></div>}
             <div
-              className={'task-row todo-item' + (task.status === '已完成' ? ' done' : '') + (draggingId === task.id ? ' dragging' : '') + (dropTargetId === task.id && draggingId !== task.id ? ' drop-target' : '')}
-              key={task.id}
-              onDragOver={event => {
-                if (!draggingId) return;
-                event.preventDefault();
-                event.dataTransfer.dropEffect = 'move';
-                setDropTargetId(task.id);
-              }}
+              data-task-id={task.id}
+              className={'task-row todo-item' + (task.status === '已完成' ? ' done' : '') + (draggingId === task.id ? ' dragging' : '')}
+              onDragOver={event => handleDragOver(event, task)}
               onDrop={event => {
-                if (!draggingId) return;
                 event.preventDefault();
-                onReorderTask(draggingId, index);
+                const sourceId = draggingId ?? event.dataTransfer.getData('text/plain');
+                const sourceIndex = schedule.findIndex(item => item.id === sourceId);
+                const rect = event.currentTarget.getBoundingClientRect();
+                const position = getDropPosition(event.clientY, rect, sourceIndex, index);
+                const slot = index + (position === 'after' ? 1 : 0);
+                const droppedOnHandle = (event.target as Element).closest('.task-drag-handle');
+                const targetIndex = droppedOnHandle
+                  ? index
+                  : Math.max(0, Math.min(schedule.length - 1, slot > sourceIndex ? slot - 1 : slot));
+                if (sourceId) onReorderTask(sourceId, targetIndex);
                 setDraggingId(null);
-                setDropTargetId(null);
+                dropTargetRef.current = null;
+                setDropTarget(null);
               }}
             >
               <input className="task-check" type="checkbox" aria-label={'完成 ' + task.title} checked={pendingChecks[task.id] ?? task.status === '已完成'} onChange={event => onToggle(task, event.target.checked)} />
@@ -88,7 +143,11 @@ export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdat
                       event.dataTransfer.setData('text/plain', task.id);
                       setDraggingId(task.id);
                     }}
-                    onDragEnd={() => { setDraggingId(null); setDropTargetId(null); }}
+                    onDragEnd={() => { setDraggingId(null); dropTargetRef.current = null; setDropTarget(null); }}
+                    onPointerDown={event => handleTouchStart(event, task.id)}
+                    onPointerMove={handleTouchMove}
+                    onPointerUp={event => { if (event.pointerType === 'touch') finishDrag(); }}
+                    onPointerCancel={() => { setDraggingId(null); dropTargetRef.current = null; setDropTarget(null); }}
                   ><GripVertical size={16} /></span>
                   <span className="task-position">第 {index + 1} 项</span>
                 <div className="row-tools"><button className="link-button" aria-label={'编辑 ' + task.title} onClick={() => onEdit(task)}>编辑</button>{onMoveToday && task.status !== '已完成' && <button className="link-button" aria-label={'移到今天 ' + task.title} onClick={() => onMoveToday(task)}>移到今天</button>}</div>
@@ -148,6 +207,8 @@ export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdat
                 </button>
               </div>
             </div>
+            {showAfter && <div className="task-drop-placeholder" aria-hidden="true"><span>放在这里</span></div>}
+            </Fragment>
           ); })}
         </div>
         <aside className="review-aside">

@@ -1,6 +1,6 @@
 {
   "name": "ai-todo-desktop",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "description": "AI 个性化 ToDo 本地优先桌面应用",
   "main": "dist/main/main.js",

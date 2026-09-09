@@ -2,7 +2,7 @@
 
 AI ToDo is a local-first Windows desktop task planner. It turns a list of tasks into an executable schedule, keeps the plan in a local SQLite database, and provides countdowns, progress check-ins, and completion reminders while you work.
 
-Current release: **0.2.3**
+Current release: **0.6.0**
 
 ## Features
 

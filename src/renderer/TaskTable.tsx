@@ -41,7 +41,7 @@ export type TaskTableProps = {
   onReorderTask: (id: string, targetIndex: number) => void;
 };
 export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdateTime, onRemoveTask, onReorderTask, visibleTasks, onEdit, onToggle, pendingChecks, onMoveToday }: TaskTableProps & {
-  visibleTasks: Task[]; onEdit: (task: Task) => void; onToggle: (task: Task, checked: boolean) => void;
+  visibleTasks: Task[]; onEdit?: (task: Task) => void; onToggle: (task: Task, checked: boolean) => void;
   pendingChecks: Record<string, boolean>; onMoveToday?: (task: Task) => void;
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -165,7 +165,7 @@ export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdat
                     onPointerDown={event => startPointerDrag(event, task)}
                   ><GripVertical size={16} /></span>
                   <span className="task-position">第 {index + 1} 项</span>
-                <div className="row-tools"><button className="link-button" aria-label={'编辑 ' + task.title} onClick={() => onEdit(task)}>编辑</button>{onMoveToday && task.status !== '已完成' && <button className="link-button" aria-label={'移到今天 ' + task.title} onClick={() => onMoveToday(task)}>移到今天</button>}</div>
+                <div className="row-tools">{onEdit && <button className="link-button" aria-label={'编辑 ' + task.title} onClick={() => onEdit(task)}>编辑</button>}{onMoveToday && task.status !== '已完成' && <button className="link-button" aria-label={'移到今天 ' + task.title} onClick={() => onMoveToday(task)}>移到今天</button>}</div>
                   <button type="button" className="order-button" disabled={index === 0} aria-label={'上移 ' + task.title} title="上移一项" onClick={() => onReorderTask(task.id, index - 1)}><ArrowUp size={14} /></button>
                   <button type="button" className="order-button" disabled={index === schedule.length - 1} aria-label={'下移 ' + task.title} title="下移一项" onClick={() => onReorderTask(task.id, index + 1)}><ArrowDown size={14} /></button>
                 </div>
@@ -203,7 +203,7 @@ export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdat
                 <input
                   type="number"
                   min="1"
-                  step="5"
+                  step="1"
                   value={task.duration}
                   aria-label={`${task.title} 预计耗时（分钟）`}
                   onChange={(event) =>

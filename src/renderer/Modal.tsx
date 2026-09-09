@@ -3,10 +3,12 @@ export function Modal({
   children,
   onClose,
   label,
+  className,
 }: {
   children: ReactNode;
   onClose: () => void;
   label: string;
+  className?: string;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -21,7 +23,7 @@ export function Modal({
   return (
     <dialog
       ref={dialogRef}
-      className="modal"
+      className={`modal${className ? ` ${className}` : ''}`}
       aria-label={label}
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;

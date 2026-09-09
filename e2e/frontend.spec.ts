@@ -449,15 +449,19 @@ test("restores a confirmed plan, delays a blocked task and edits its time in pla
   await page.getByRole("button", { name: "临时事项打断", exact: true }).click();
   await page.getByRole("button", { name: "直接修改任务与时段", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "快捷修改任务与时段" });
-  await editor.getByLabel("任务名称").fill("补充 Demo 交互");
-  await editor.getByLabel("完成标准").fill("完成交互并通过自测");
-  await editor.getByLabel("优先级").selectOption("高");
-  await editor.getByLabel("开始时间").fill("08:15");
-  await editor.getByLabel("预计时长（分钟）").fill("150");
-  await expect(editor.getByLabel("结束时间")).toHaveValue("10:45");
-  await editor.getByRole("button", { name: "保存并更新时间" }).click();
+  await expect(editor.locator(".todo-item")).toHaveCount(3);
+  await editor.getByRole("button", { name: "下移 完成 MVP Demo 交互", exact: true }).click();
+  await expect(editor.getByLabel("完成 MVP Demo 交互 排序")).toContainText("第 2 项");
+  await editor.getByRole("button", { name: "上移 完成 MVP Demo 交互", exact: true }).click();
+  await editor.getByLabel("完成 MVP Demo 交互 任务名称", { exact: true }).fill("补充 Demo 交互");
+  await editor.getByLabel("补充 Demo 交互 完成标准", { exact: true }).fill("完成交互并通过自测");
+  await editor.getByLabel("补充 Demo 交互 优先级").selectOption("高");
+  await editor.getByLabel("补充 Demo 交互 开始时间").fill("08:15");
+  await editor.getByLabel("补充 Demo 交互 预计耗时（分钟）").fill("150");
+  await expect(editor.getByLabel("补充 Demo 交互 结束时间")).toHaveValue("10:45");
+  await editor.getByRole("button", { name: "保存并更新计划" }).click();
   await expect(editor).toHaveCount(0);
-  await expect(page.getByRole("status")).toContainText("对应时段已更新");
+  await expect(page.getByRole("status")).toContainText("任务内容、顺序和对应时段已更新");
   const editCall = calls.filter((call) => call.method === "confirmPlan").at(-1)!.input;
   expect(editCall.tasks[0]).toMatchObject({ title: "补充 Demo 交互", doneDefinition: "完成交互并通过自测", priority: "高", duration: 150 });
   expect(editCall.schedule[0]).toMatchObject({ title: "补充 Demo 交互", startMinutes: 495, endMinutes: 645 });
@@ -508,7 +512,7 @@ test("empty states, deletion and the last availability safeguard stay usable", a
   await page.getByRole("button", { name: "删除时段 2" }).click();
   await expect(page.getByRole("button", { name: "删除时段 1" })).toBeDisabled();
   await page.locator(".sidebar").getByRole("button", { name: '任务清单' }).click();
-  await expect(page.getByText("当天没有任务。添加任务后，可在这里调整时间并开始执行。")).toBeVisible();
+  await expect(page.getByText("当前没有待处理任务。新增任务后，可在这里调整时间并开始执行。")).toBeVisible();
   await page.getByLabel("快速添加任务").fill("新计划");
   await page.getByRole("button", { name: "添加任务", exact: true }).click();
   await expect(page.getByLabel("新计划 任务名称", { exact: true })).toBeVisible();
@@ -670,7 +674,7 @@ test('theme switch uses the toggle origin and remembers the selected theme', asy
   expect(errors).toEqual([]);
 });
 
-test('daily list saves completion, supports undo and keeps yesterday separate after reload', async ({ page }, info) => {
+test('daily list removes completed tasks and keeps other dates separate after reload', async ({ page }, info) => {
   const { errors } = await boot(page);
   await page.locator('.sidebar').getByRole('button', { name: '任务清单' }).click();
   await page.getByLabel('快速添加任务').fill('整理书桌');
@@ -678,20 +682,14 @@ test('daily list saves completion, supports undo and keeps yesterday separate af
   await expect(page.getByLabel('完成 整理书桌', { exact: true })).toBeVisible();
   await page.getByLabel('完成 整理书桌', { exact: true }).click();
   await expect(page.getByLabel('完成 整理书桌', { exact: true })).toHaveCount(0);
-  await page.getByLabel('任务状态筛选').selectOption('done');
-  await expect(page.getByLabel('完成 整理书桌', { exact: true })).toBeChecked();
   await reloadAndReturn(page);
   await page.locator('.sidebar').getByRole('button', { name: '任务清单' }).click();
-  await page.getByLabel('任务状态筛选').selectOption('done');
-  await expect(page.getByLabel('完成 整理书桌', { exact: true })).toBeChecked();
-  await page.getByLabel('完成 整理书桌', { exact: true }).click();
-  await page.getByLabel('任务状态筛选').selectOption('pending');
-  await expect(page.getByLabel('完成 整理书桌', { exact: true })).not.toBeChecked();
+  await expect(page.getByLabel('完成 整理书桌', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '后一天', exact: true }).click();
   await expect(page.getByLabel('查看任务日期')).toHaveValue('2026-09-06');
   await expect(page.locator('.todo-item')).toHaveCount(0);
   await page.getByRole('button', { name: '前一天', exact: true }).click();
-  await expect(page.getByLabel('完成 整理书桌', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('完成 整理书桌', { exact: true })).toHaveCount(0);
   await capture(page, info, 'daily-list');
   expect(errors).toEqual([]);
 });
@@ -757,7 +755,7 @@ test('future plans are scheduled against their own date and do not start today c
   await expect(page.locator('.todo-item')).toHaveCount(0);
 });
 
-test('generating additional tasks preserves existing tasks and completion', async ({ page }) => {
+test('generating additional tasks preserves completion without showing finished work', async ({ page }) => {
   await boot(page);
   await page.locator('.sidebar').getByRole('button', { name: '任务清单' }).click();
   await page.getByLabel('快速添加任务').fill('已做完的事');
@@ -768,9 +766,8 @@ test('generating additional tasks preserves existing tasks and completion', asyn
   await page.getByLabel('今天想完成什么？').fill('新增的事');
   await page.getByRole('button', { name: '生成参考计划', exact: true }).click();
   await page.locator('.sidebar').getByRole('button', { name: '任务清单' }).click();
-  await page.getByLabel('任务状态筛选').selectOption('all');
-  await expect(page.locator('.todo-item')).toHaveCount(2);
-  await expect(page.getByLabel('完成 已做完的事', { exact: true })).toBeChecked();
+  await expect(page.locator('.todo-item')).toHaveCount(1);
+  await expect(page.getByLabel('完成 已做完的事', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('完成 新增的事', { exact: true })).not.toBeChecked();
 });
 
@@ -784,8 +781,32 @@ test('failed completion keeps the task pending and can be retried', async ({ pag
   await expect(page.getByLabel('完成 保存失败后重试', { exact: true })).not.toBeChecked();
   await page.getByLabel('完成 保存失败后重试', { exact: true }).click();
   await expect(page.locator('.todo-item')).toHaveCount(0);
-  await page.getByLabel('任务状态筛选').selectOption('done');
-  await expect(page.getByLabel('完成 保存失败后重试', { exact: true })).toBeChecked();
+  await expect(page.getByLabel('完成 保存失败后重试', { exact: true })).toHaveCount(0);
+});
+
+test('expired tasks leave the current list and do not delay newly added work', async ({ page }) => {
+  const tasks = starterTasks.slice(0, 2).map((task, index) => ({
+    ...task,
+    id: "expiry-task-" + index,
+    duration: index === 0 ? 60 : 240,
+  }));
+  const availability = [{ id: "day", start: "08:00", end: "18:00", kind: "available" as const }];
+  const schedule = buildSchedule(tasks, availability, 8 * 60);
+  const { calls } = await boot(page, {
+    currentTime: "2026-09-05T10:00:00+08:00",
+    state: { tasks, schedule, availability, version: 0, confirmed: false },
+  });
+  await expect(page.getByLabel(tasks[0].title + " 任务名称", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel(tasks[1].title + " 任务名称", { exact: true })).toBeVisible();
+  await page.getByLabel("快速添加任务").fill("现在开始的新任务");
+  await page.getByRole("button", { name: "添加任务", exact: true }).click();
+  const saved = calls.filter((call) => call.method === "saveDraft").at(-1)!.input;
+  expect(saved.tasks.find((task: any) => task.id === tasks[0].id).status).toBe("已取消");
+  expect(saved.schedule).toHaveLength(2);
+  expect(saved.schedule[0]).toMatchObject({ id: tasks[1].id, startMinutes: 600 });
+  expect(saved.schedule[1]).toMatchObject({ title: "现在开始的新任务", startMinutes: 840 });
+  await reloadAndReturn(page);
+  await expect(page.getByLabel(tasks[0].title + " 任务名称", { exact: true })).toHaveCount(0);
 });
 
 test('failed draft prevents date switching until retry saves the edited content', async ({ page }) => {
@@ -998,7 +1019,7 @@ test('date selection contains only dates and a restart opens an empty today', as
   await expect(page.getByLabel('查看任务日期')).toHaveValue('2026-09-05');
   await expect(dates).toHaveValue('2026-09-05');
   await expect(page.locator('.todo-item')).toHaveCount(0);
-  await expect(page.getByText('当天没有任务。添加任务后，可在这里调整时间并开始执行。')).toBeVisible();
+  await expect(page.getByText('当前没有待处理任务。新增任务后，可在这里调整时间并开始执行。')).toBeVisible();
   await expect(page.getByRole('button', { name: '确认并开始', exact: true })).toBeDisabled();
   await capture(page, info, 'empty-today');
   await dates.selectOption('2026-09-04');

@@ -254,6 +254,16 @@ summary { cursor:pointer; font-size:13px; color:var(--muted); }
 .blocker-editor textarea { min-height:72px; resize:vertical; }
 .blocker-editor-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
 .waiting-next { color:var(--muted); font-size:12px; }
+.plan-editor-modal { width:min(1120px, calc(100vw - 32px)); }
+.blocker-plan-editor { margin-top:18px; }
+.plan-editor-modal .table-head, .plan-editor-modal .task-row { display:grid; grid-template-columns:22px minmax(170px,1fr) 232px 70px 106px; gap:12px; }
+.plan-editor-modal .task-row { padding:15px 12px; align-items:center; }
+.plan-editor-modal .task-check { grid-column:1; grid-row:1; }
+.plan-editor-modal .task-main { grid-column:2; grid-row:1; }
+.plan-editor-modal .time-cell { grid-column:3; grid-row:1; }
+.plan-editor-modal .priority-cell { grid-column:4; grid-row:1; }
+.plan-editor-modal .task-actions { grid-column:5; grid-row:1; border:0; padding:0; }
+.plan-editor-modal .review-aside { margin-top:12px; }
 .blocker-edit-error { margin:12px 0 0; color:#b73443 !important; font-size:12px !important; }
 .impact-list > div { display:flex; gap:10px; justify-content:space-between; border-bottom:1px solid var(--line); padding:12px 0; font-size:12px; }
 .impact-list span { flex:1; min-width:0; overflow-wrap:anywhere; }
@@ -407,10 +417,19 @@ summary { cursor:pointer; font-size:13px; color:var(--muted); }
   .daily-list .priority-cell { grid-column:3; grid-row:2; }
   .daily-list .task-actions { grid-column:2 / -1; grid-row:3; border-top:1px solid var(--line); padding-top:9px; }
   .daily-list .task-actions::before { content:'预计耗时'; margin-right:auto; }
+  .plan-editor-modal .table-head { display:none; }
+  .plan-editor-modal .task-row { grid-template-columns:22px minmax(0,1fr) 70px; }
+  .plan-editor-modal .task-main { grid-column:2 / -1; grid-row:1; }
+  .plan-editor-modal .time-cell { grid-column:2; grid-row:2; }
+  .plan-editor-modal .priority-cell { grid-column:3; grid-row:2; }
+  .plan-editor-modal .task-actions { grid-column:2 / -1; grid-row:3; border-top:1px solid var(--line); padding-top:9px; }
+  .plan-editor-modal .task-actions::before { content:'预计耗时'; margin-right:auto; }
 }
 @media(max-width:650px) {
   .daily-list .task-row { padding:14px 8px; gap:8px; grid-template-columns:18px minmax(0,1fr) 66px; }
   .daily-list .time-cell { grid-column:1 / 3; }
+  .plan-editor-modal .task-row { padding:14px 8px; gap:8px; grid-template-columns:18px minmax(0,1fr) 66px; }
+  .plan-editor-modal .time-cell { grid-column:1 / 3; }
   .history-picker { margin-left:0; }
   .history-picker > span { display:inline; margin-right:10px; }
 }

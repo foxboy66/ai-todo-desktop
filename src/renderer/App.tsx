@@ -5,6 +5,7 @@ import { Capture } from './TaskCapture';
 import { Execute } from './ExecutionView';
 import { moveTask } from '../shared/task-order';
 import { DailyList } from './DailyList';
+import { TaskTable } from './TaskTable';
 import { localDayText, scheduleStart, type DaySummary } from '../shared/daily';
 import type { PlanSnapshot } from '../shared/domain';
 import { defaultAiSettings, type AiSettings } from '../shared/ai-settings';
@@ -40,14 +41,26 @@ const reasons = [
 function totalMinutes(tasks: Task[]) {
   return tasks.reduce((sum, task) => sum + task.duration, 0);
 }
-function timeInputLabel(minutes: number) {
-  const value = Math.max(0, Math.min(1439, Math.round(minutes)));
-  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
-}
 function getNextPendingTask(schedule: ScheduledTask[], currentTaskId: string) {
   const currentIndex = schedule.findIndex((task) => task.id === currentTaskId);
   if (currentIndex < 0) return undefined;
   return schedule.slice(currentIndex + 1).find((task) => task.status !== "已完成");
+}
+function getPlanningTasks(tasks: Task[], schedule: ScheduledTask[], day: string, now: Date) {
+  const expiredIds = new Set<string>();
+  if (day === localDayText(now)) {
+    const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+    for (const task of schedule) {
+      if (task.scheduled && task.endMinutes !== null && task.endMinutes <= nowMinutes && task.status !== "已完成") expiredIds.add(task.id);
+    }
+  }
+  return tasks.filter((task) => task.status !== "已完成" && task.status !== "已取消" && !expiredIds.has(task.id));
+}
+function archiveExpiredTasks(tasks: Task[], schedule: ScheduledTask[], day: string, now: Date) {
+  const activeIds = new Set(getPlanningTasks(tasks, schedule, day, now).map((task) => task.id));
+  return tasks.map((task) => task.status !== "已完成" && task.status !== "已取消" && !activeIds.has(task.id)
+    ? { ...task, status: "已取消" as const }
+    : task);
 }
 function getExecutionTaskForNow(schedule: ScheduledTask[], now = new Date()) {
   const pendingTask = getCurrentScheduledTask(schedule, now);
@@ -122,14 +135,10 @@ export function App() {
   const [customReason, setCustomReason] = useState("");
   const [customDelay, setCustomDelay] = useState("");
   const [blockerEdit, setBlockerEdit] = useState<{
-    title: string;
-    doneDefinition: string;
-    priority: Task['priority'];
-    duration: number;
-    start: string;
-    end: string;
+    tasks: Task[];
+    schedule: ScheduledTask[];
+    sourceTaskIds: string[];
   } | null>(null);
-  const [blockerEditError, setBlockerEditError] = useState("");
   const [reminderAlert, setReminderAlert] = useState<ReminderAlert | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
@@ -247,7 +256,6 @@ export function App() {
     schedule.find((task) => task.scheduled) ??
     schedule[0];
   const currentProgress = currentTask ? (progress[currentTask.id] ?? 0) : 0;
-  const plannedMinutes = totalMinutes(tasks);
   const reminderInterval = currentTask ? getReminderInterval(currentTask.duration) : null;
   const countdownTotalSeconds = currentTask ? Math.max(0, Math.round(currentTask.duration * 60)) : 0;
   const liveCountdownSeconds = currentTask ? getSecondsUntilTaskEnd(currentTask, now) : 0;
@@ -257,6 +265,10 @@ export function App() {
       : pausedCountdownSeconds ?? liveCountdownSeconds
     : 0;
   const nextTask = currentTask ? getNextPendingTask(schedule, currentTask.id) : undefined;
+  const planningTasks = getPlanningTasks(tasks, schedule, day, now);
+  const planningTaskIds = new Set(planningTasks.map((task) => task.id));
+  const planningSchedule = schedule.filter((task) => planningTaskIds.has(task.id));
+  const plannedMinutes = totalMinutes(planningTasks);
 
   async function refreshDays() {
     try { setDays(await window.aiTodo.listDays()); } catch { setNotice('日期记录读取失败，请稍后重试。'); }
@@ -316,8 +328,9 @@ export function App() {
 
   async function quickAdd(title: string) {
     setLoading(true);
-    const nextTasks = [...tasks, { ...createDraftTask(tasks.length), id: crypto.randomUUID(), title }];
-    const nextSchedule = buildSchedule(nextTasks, availability, scheduleStart(day));
+    const archivedTasks = archiveExpiredTasks(tasks, schedule, day, now);
+    const nextTasks = [...archivedTasks, { ...createDraftTask(archivedTasks.length), id: crypto.randomUUID(), title }];
+    const nextSchedule = buildSchedule(getPlanningTasks(nextTasks, schedule, day, now), availability, scheduleStart(day));
     const ok = await persistDraft(nextTasks, availability, nextSchedule);
     if (ok) { setTasks(nextTasks); setSchedule(nextSchedule); setNotice('任务已保存，默认 30 分钟，可在编辑中修改。'); }
     setLoading(false); return ok;
@@ -352,8 +365,9 @@ export function App() {
     setLoading(true);
     try {
       const result = await window.aiTodo.generatePlan({ day, rawText: taskInput, availability });
-      const allTasks = [...tasks, ...result.tasks.map(task => ({ ...task, id: crypto.randomUUID() }))];
-      const allSchedule = buildSchedule(allTasks, availability, scheduleStart(day));
+      const archivedTasks = archiveExpiredTasks(tasks, schedule, day, now);
+      const allTasks = [...archivedTasks, ...result.tasks.map(task => ({ ...task, id: crypto.randomUUID() }))];
+      const allSchedule = buildSchedule(getPlanningTasks(allTasks, schedule, day, now), availability, scheduleStart(day));
       if (!await persistDraft(allTasks, availability, allSchedule)) throw new Error('保存失败');
       setTasks(allTasks); setSchedule(allSchedule); setTaskInput('');
       setCurrentTaskId(allTasks[0]?.id ?? "");
@@ -376,7 +390,10 @@ export function App() {
     setLoading(true);
     try {
     if (!await pendingSave.current) throw new Error('保存失败');
-    const result = (await window.aiTodo.confirmPlan({ day, tasks, availability, schedule, reason })) as {
+    const nextTasks = archiveExpiredTasks(tasks, schedule, day, now);
+    const activeIds = new Set(getPlanningTasks(nextTasks, schedule, day, now).map((task) => task.id));
+    const nextSchedule = schedule.filter((task) => activeIds.has(task.id));
+    const result = (await window.aiTodo.confirmPlan({ day, tasks: nextTasks, availability, schedule: nextSchedule, reason })) as {
       schedule: ScheduledTask[];
       version: number;
     };
@@ -398,20 +415,25 @@ export function App() {
   }
 
   function updateTask(id: string, patch: Partial<Task>) {
-    const nextTasks = tasks.map((task) => (task.id === id ? { ...task, ...patch } : task));
+    const editedTasks = tasks.map((task) => (task.id === id ? { ...task, ...patch } : task));
+    const nextTasks = archiveExpiredTasks(editedTasks, schedule, day, now);
+    const activeTasks = getPlanningTasks(nextTasks, schedule, day, now);
+    const activeIds = new Set(activeTasks.map((task) => task.id));
     const nextSchedule =
       patch.duration !== undefined
-        ? buildSchedule(nextTasks, availability, scheduleStart(day))
-        : schedule.map((task) => (task.id === id ? { ...task, ...patch } : task));
+        ? buildSchedule(activeTasks, availability, scheduleStart(day))
+        : schedule.filter((task) => activeIds.has(task.id)).map((task) => (task.id === id ? { ...task, ...patch } : task));
     setTasks(nextTasks);
     setSchedule(nextSchedule);
     persistDraft(nextTasks, availability, nextSchedule);
   }
   function reorderTask(id: string, targetIndex: number) {
     if (loading) return;
-    const nextTasks = moveTask(tasks, id, targetIndex);
-    if (nextTasks === tasks) return;
-    const nextSchedule = buildSchedule(nextTasks, availability, scheduleStart(day));
+    const reorderedTasks = moveTask(planningTasks, id, targetIndex);
+    if (reorderedTasks === planningTasks) return;
+    const activeIds = new Set(planningTasks.map((task) => task.id));
+    const nextTasks = [...archiveExpiredTasks(tasks, schedule, day, now).filter((task) => !activeIds.has(task.id)), ...reorderedTasks];
+    const nextSchedule = buildSchedule(reorderedTasks, availability, scheduleStart(day));
     setTasks(nextTasks);
     setSchedule(nextSchedule);
     setConfirmed(false);
@@ -424,14 +446,15 @@ export function App() {
   }
 
   function removeTask(id: string) {
-    const nextTasks = tasks.filter((task) => task.id !== id);
-    const nextSchedule = schedule.filter((task) => task.id !== id);
+    const nextTasks = archiveExpiredTasks(tasks.filter((task) => task.id !== id), schedule, day, now);
+    const activeIds = new Set(getPlanningTasks(nextTasks, schedule, day, now).map((task) => task.id));
+    const nextSchedule = schedule.filter((task) => task.id !== id && activeIds.has(task.id));
     setTasks(nextTasks);
     setSchedule(nextSchedule);
     persistDraft(nextTasks, availability, nextSchedule);
   }
   function updateTime(id: string, field: "start" | "end", value: string) {
-    const current = schedule.find((task) => task.id === id);
+    const current = planningSchedule.find((task) => task.id === id);
     if (!current || !value) return;
     const typedMinutes = parseTime(value);
     const startMinutes =
@@ -445,12 +468,14 @@ export function App() {
       return;
     }
     const duration = field === "end" ? endMinutes - startMinutes : current.duration;
-    const nextSchedule = reflowScheduleFromTask(schedule, id, startMinutes, duration);
-    const nextTasks =
+    const editedTasks =
       field === "end"
         ? tasks.map((task) => (task.id === id ? { ...task, duration } : task))
         : tasks;
-    if (field === "end") setTasks(nextTasks);
+    const nextTasks = archiveExpiredTasks(editedTasks, schedule, day, now);
+    const activeIds = new Set(getPlanningTasks(nextTasks, schedule, day, now).map((task) => task.id));
+    const nextSchedule = reflowScheduleFromTask(planningSchedule.filter((task) => activeIds.has(task.id)), id, startMinutes, duration);
+    setTasks(nextTasks);
     setSchedule(nextSchedule);
     persistDraft(nextTasks, availability, nextSchedule);
     const overflowTasks = getScheduleOverflowTasks(nextSchedule, availability);
@@ -462,9 +487,10 @@ export function App() {
   }
   function removeAvailability(id: string) {
     const nextAvailability = availability.filter(item => item.id !== id);
-    const nextSchedule = buildSchedule(tasks, nextAvailability, scheduleStart(day));
-    setAvailability(nextAvailability); setSchedule(nextSchedule);
-    persistDraft(tasks, nextAvailability, nextSchedule);
+    const nextTasks = archiveExpiredTasks(tasks, schedule, day, now);
+    const nextSchedule = buildSchedule(getPlanningTasks(nextTasks, schedule, day, now), nextAvailability, scheduleStart(day));
+    setTasks(nextTasks); setAvailability(nextAvailability); setSchedule(nextSchedule);
+    persistDraft(nextTasks, nextAvailability, nextSchedule);
   }
   function addAvailability() {
     const nextAvailability = [
@@ -472,18 +498,20 @@ export function App() {
       { id: `slot-${Date.now()}`, start: "19:00", end: "20:00", kind: "available" as const },
     ];
     setAvailability(nextAvailability);
-    const nextSchedule = buildSchedule(tasks, nextAvailability, scheduleStart(day));
-    setSchedule(nextSchedule);
-    persistDraft(tasks, nextAvailability, nextSchedule);
+    const nextTasks = archiveExpiredTasks(tasks, schedule, day, now);
+    const nextSchedule = buildSchedule(getPlanningTasks(nextTasks, schedule, day, now), nextAvailability, scheduleStart(day));
+    setTasks(nextTasks); setSchedule(nextSchedule);
+    persistDraft(nextTasks, nextAvailability, nextSchedule);
   }
   function updateAvailability(id: string, field: "start" | "end", value: string) {
     const nextAvailability = availability.map((slot) =>
       slot.id === id ? { ...slot, [field]: value } : slot,
     );
-    setAvailability(nextAvailability);
-    const nextSchedule = buildSchedule(tasks, nextAvailability, scheduleStart(day));
+    const nextTasks = archiveExpiredTasks(tasks, schedule, day, now);
+    setTasks(nextTasks); setAvailability(nextAvailability);
+    const nextSchedule = buildSchedule(getPlanningTasks(nextTasks, schedule, day, now), nextAvailability, scheduleStart(day));
     setSchedule(nextSchedule);
-    persistDraft(tasks, nextAvailability, nextSchedule);
+    persistDraft(nextTasks, nextAvailability, nextSchedule);
   }
 
   async function updateProgress(value: number) {
@@ -562,7 +590,6 @@ export function App() {
     setCustomReason("");
     setCustomDelay("");
     setBlockerEdit(null);
-    setBlockerEditError("");
     setBlockerOpen(false);
   }
 
@@ -608,8 +635,9 @@ export function App() {
     if (!currentTask || !blocker.reason || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440) return;
     const startMinutes = currentTask.startMinutes ?? now.getHours() * 60 + now.getMinutes();
     const duration = currentTask.duration + minutes;
-    const nextTasks = tasks.map(task => task.id === currentTask.id ? { ...task, duration } : task);
-    const nextSchedule = reflowScheduleFromTask(schedule, currentTask.id, startMinutes, duration);
+    const nextTasks = archiveExpiredTasks(tasks.map(task => task.id === currentTask.id ? { ...task, duration } : task), schedule, day, now);
+    const activeIds = new Set(getPlanningTasks(nextTasks, schedule, day, now).map((task) => task.id));
+    const nextSchedule = reflowScheduleFromTask(schedule.filter((task) => activeIds.has(task.id)), currentTask.id, startMinutes, duration);
     const pausedSeconds = pausedCountdownSeconds === null ? undefined : pausedCountdownSeconds + minutes * 60;
     void commitBlockerAdjustment(
       nextTasks,
@@ -621,72 +649,56 @@ export function App() {
   }
 
   function openBlockerEditor() {
-    if (!currentTask) return;
-    const startMinutes = currentTask.startMinutes ?? now.getHours() * 60 + now.getMinutes();
-    const endMinutes = currentTask.endMinutes ?? startMinutes + currentTask.duration;
+    if (!planningTasks.length) return;
     setBlockerEdit({
-      title: currentTask.title,
-      doneDefinition: currentTask.doneDefinition,
-      priority: currentTask.priority,
-      duration: currentTask.duration,
-      start: timeInputLabel(startMinutes),
-      end: timeInputLabel(endMinutes),
+      tasks: planningTasks.map((task) => ({ ...task })),
+      schedule: planningSchedule.map((task) => ({ ...task })),
+      sourceTaskIds: planningTasks.map((task) => task.id),
     });
-    setBlockerEditError("");
   }
 
-  function updateBlockerStart(start: string) {
+  function updateBlockerTask(id: string, patch: Partial<Task>) {
     if (!blockerEdit) return;
-    const startMinutes = parseTime(start);
-    const duration = Math.min(blockerEdit.duration, Math.max(1, 1439 - startMinutes));
-    setBlockerEdit({ ...blockerEdit, start, duration, end: timeInputLabel(startMinutes + duration) });
-    setBlockerEditError("");
+    const nextTasks = blockerEdit.tasks.map((task) => task.id === id ? { ...task, ...patch } : task);
+    const scheduledTask = blockerEdit.schedule.find((task) => task.id === id);
+    const nextSchedule = patch.duration !== undefined && scheduledTask?.startMinutes !== null && scheduledTask?.startMinutes !== undefined
+      ? reflowScheduleFromTask(blockerEdit.schedule, id, scheduledTask.startMinutes, Math.max(1, patch.duration))
+      : blockerEdit.schedule.map((task) => task.id === id ? { ...task, ...patch } : task);
+    setBlockerEdit({ ...blockerEdit, tasks: nextTasks, schedule: nextSchedule });
   }
 
-  function updateBlockerEnd(end: string) {
+  function updateBlockerTime(id: string, field: "start" | "end", value: string) {
     if (!blockerEdit) return;
-    const startMinutes = parseTime(blockerEdit.start);
-    const endMinutes = parseTime(end);
-    setBlockerEdit({ ...blockerEdit, end, duration: endMinutes > startMinutes ? endMinutes - startMinutes : blockerEdit.duration });
-    setBlockerEditError("");
+    const current = blockerEdit.schedule.find((task) => task.id === id);
+    if (!current || !value) return;
+    const typedMinutes = parseTime(value);
+    const startMinutes = field === "start" ? typedMinutes : current.startMinutes ?? Math.max(0, typedMinutes - current.duration);
+    const endMinutes = field === "end" ? typedMinutes : current.endMinutes ?? startMinutes + current.duration;
+    if (endMinutes <= startMinutes) { setNotice("结束时间需要晚于开始时间。"); return; }
+    const duration = field === "end" ? endMinutes - startMinutes : current.duration;
+    const nextTasks = field === "end" ? blockerEdit.tasks.map((task) => task.id === id ? { ...task, duration } : task) : blockerEdit.tasks;
+    setBlockerEdit({ ...blockerEdit, tasks: nextTasks, schedule: reflowScheduleFromTask(blockerEdit.schedule, id, startMinutes, duration) });
   }
 
-  function updateBlockerDuration(value: number) {
-    if (!blockerEdit || !Number.isFinite(value)) return;
-    const startMinutes = parseTime(blockerEdit.start);
-    const duration = Math.max(1, Math.min(Math.round(value), Math.max(1, 1439 - startMinutes)));
-    setBlockerEdit({ ...blockerEdit, duration, end: timeInputLabel(startMinutes + duration) });
-    setBlockerEditError("");
+  function reorderBlockerTask(id: string, targetIndex: number) {
+    if (!blockerEdit) return;
+    const nextTasks = moveTask(blockerEdit.tasks, id, targetIndex);
+    setBlockerEdit({ ...blockerEdit, tasks: nextTasks, schedule: buildSchedule(nextTasks, availability, blockerEdit.schedule[0]?.startMinutes ?? scheduleStart(day)) });
   }
 
   function saveBlockerEdit() {
     if (!currentTask || !blocker.reason || !blockerEdit) return;
-    const title = blockerEdit.title.trim();
-    const startMinutes = parseTime(blockerEdit.start);
-    const endMinutes = parseTime(blockerEdit.end);
-    if (!title) {
-      setBlockerEditError('请输入任务名称。');
-      return;
-    }
-    if (endMinutes <= startMinutes) {
-      setBlockerEditError('结束时间需要晚于开始时间。');
-      return;
-    }
-    const duration = endMinutes - startMinutes;
-    const nextTasks = tasks.map(task => task.id === currentTask.id
-      ? { ...task, title, doneDefinition: blockerEdit.doneDefinition.trim(), priority: blockerEdit.priority, duration }
-      : task);
-    const nextSchedule = reflowScheduleFromTask(schedule, currentTask.id, startMinutes, duration)
-      .map(task => task.id === currentTask.id ? { ...task, title, doneDefinition: blockerEdit.doneDefinition.trim(), priority: blockerEdit.priority } : task);
-    const pausedSeconds = pausedCountdownSeconds === null
-      ? undefined
-      : Math.max(0, Math.round((endMinutes - (now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60)) * 60));
+    if (blockerEdit.tasks.some((task) => !task.title.trim())) { setNotice("请输入任务名称。"); return; }
+    const sourceIds = new Set(blockerEdit.sourceTaskIds);
+    const editedById = new Map(blockerEdit.tasks.map((task) => [task.id, { ...task, title: task.title.trim(), doneDefinition: task.doneDefinition.trim() }]));
+    const nextTasks = archiveExpiredTasks(tasks, schedule, day, now)
+      .filter((task) => !sourceIds.has(task.id) || editedById.has(task.id))
+      .map((task) => editedById.get(task.id) ?? task);
     void commitBlockerAdjustment(
       nextTasks,
-      nextSchedule,
-      `遇到阻碍：${blocker.reason}；快捷修改任务与时段`,
-      `“${title}”及对应时段已更新，后续任务和提醒已同步。`,
-      pausedSeconds,
+      blockerEdit.schedule.filter((task) => editedById.get(task.id)?.status !== "已完成"),
+      `遇到阻碍：${blocker.reason}；快捷修改任务清单与时段`,
+      `任务内容、顺序和对应时段已更新，提醒已同步。`,
     );
   }
 
@@ -721,7 +733,7 @@ export function App() {
       </Modal>}
       {availabilityOpen && <Modal label="可用时段" onClose={() => setAvailabilityOpen(false)}><h2>设置可用时段</h2><p>修改后自动保存为草稿并重新排程，确认计划后更新提醒。</p><AvailabilityEditor availability={availability} onAdd={addAvailability} onUpdate={updateAvailability} onRemove={removeAvailability} /><div className="modal-actions"><button className="primary" onClick={() => setAvailabilityOpen(false)}>完成设置</button></div></Modal>}
       {clearConfirmOpen && <Modal label="删除全部本地数据" onClose={() => setClearConfirmOpen(false)}><h2>删除全部本地数据？</h2><p>将删除所有日期的任务、计划、进度和大模型设置。此操作无法撤销。</p><div className="modal-actions"><button className="secondary" onClick={() => setClearConfirmOpen(false)}>取消删除</button><button className="danger-button" disabled={loading} onClick={() => void clearData()}>确认删除全部数据</button></div></Modal>}
-      <AppShell view={view} day={day} today={localDayText(now)} days={days} busy={loading} confirmed={confirmed} taskCount={tasks.length}
+      <AppShell view={view} day={day} today={localDayText(now)} days={days} busy={loading} confirmed={confirmed} taskCount={planningTasks.length}
         aiEnabled={aiSettings.enabled} onNavigate={setStep} onDay={next => void changeDay(next)} onSettings={() => setSettingsOpen(true)}>
         <div className="content-wrap">
 
@@ -765,9 +777,9 @@ export function App() {
           )}
           {saveFailed && <button className="secondary" disabled={loading} onClick={() => void persistDraft(tasks, availability, schedule)}>重试保存当前任务</button>}
           <fieldset className="work-area" disabled={loading}>
-          {view === 'list' && <DailyList key={day} day={day} today={localDayText(now)} tasks={tasks} busy={loading} onAdd={quickAdd} onUpdate={editListTask}
+          {view === 'list' && <DailyList key={day} day={day} today={localDayText(now)} tasks={planningTasks} busy={loading} onAdd={quickAdd} onUpdate={editListTask}
             onConfirm={() => void confirmPlan()} onAvailability={() => setAvailabilityOpen(true)}
-            plan={{ tasks, schedule, availability, onUpdateTask: updateTask, onUpdateTime: updateTime, onRemoveTask: removeTask, onReorderTask: reorderTask }}
+            plan={{ tasks: planningTasks, schedule: planningSchedule, availability, onUpdateTask: updateTask, onUpdateTime: updateTime, onRemoveTask: removeTask, onReorderTask: reorderTask }}
             onCapture={() => setStep('capture')} confirmed={confirmed} onExecute={() => setStep('execute')} />}
           {view === "capture" && (
             <Capture
@@ -818,7 +830,6 @@ export function App() {
                 setCustomReason("");
                 setCustomDelay("");
                 setBlockerEdit(null);
-                setBlockerEditError("");
                 setBlockerOpen(true);
               }}
               onReview={() => setStep("list")}
@@ -904,23 +915,26 @@ export function App() {
         </Modal>
       )}
       {blockerOpen && blocker.reason && blockerEdit && currentTask && (
-        <Modal label="快捷修改任务与时段" onClose={closeBlockerFlow}>
+        <Modal label="快捷修改任务与时段" className="plan-editor-modal" onClose={closeBlockerFlow}>
           <div className="modal-icon"><PencilLine size={20} /></div>
           <h2>快捷修改任务与时段</h2>
-          <p>保存后，后续任务和提醒会从新的结束时间继续顺延。</p>
-          <form className="blocker-editor" onSubmit={event => { event.preventDefault(); saveBlockerEdit(); }}>
-            <label>任务名称<input required maxLength={200} value={blockerEdit.title} onChange={event => setBlockerEdit({ ...blockerEdit, title: event.target.value })} /></label>
-            <label>完成标准<textarea maxLength={1000} rows={3} value={blockerEdit.doneDefinition} onChange={event => setBlockerEdit({ ...blockerEdit, doneDefinition: event.target.value })} /></label>
-            <div className="blocker-editor-grid">
-              <label>优先级<select value={blockerEdit.priority} onChange={event => setBlockerEdit({ ...blockerEdit, priority: event.target.value as Task['priority'] })}><option>高</option><option>中</option><option>低</option></select></label>
-              <label>预计时长（分钟）<input type="number" required min={1} max={1440} value={blockerEdit.duration} onChange={event => updateBlockerDuration(Number(event.target.value))} /></label>
-              <label>开始时间<input type="time" required value={blockerEdit.start} onChange={event => updateBlockerStart(event.target.value)} /></label>
-              <label>结束时间<input type="time" required value={blockerEdit.end} onChange={event => updateBlockerEnd(event.target.value)} /></label>
-            </div>
-            {blockerEditError && <p className="blocker-edit-error" role="alert">{blockerEditError}</p>}
+          <p>这里与任务清单使用同一套编辑方式。拖动手柄或点击箭头调整顺序，时间会随顺序重新安排。</p>
+          <form className="blocker-plan-editor" onSubmit={event => { event.preventDefault(); saveBlockerEdit(); }}>
+            <TaskTable
+              tasks={blockerEdit.tasks}
+              schedule={blockerEdit.schedule}
+              availability={availability}
+              visibleTasks={blockerEdit.tasks.filter((task) => task.status !== "已完成")}
+              pendingChecks={{}}
+              onUpdateTask={updateBlockerTask}
+              onUpdateTime={updateBlockerTime}
+              onRemoveTask={(id) => setBlockerEdit({ ...blockerEdit, tasks: blockerEdit.tasks.filter((task) => task.id !== id), schedule: blockerEdit.schedule.filter((task) => task.id !== id) })}
+              onReorderTask={reorderBlockerTask}
+              onToggle={(task, checked) => updateBlockerTask(task.id, { status: checked ? "已完成" : "待安排" })}
+            />
             <div className="modal-actions">
-              <button type="button" className="secondary" onClick={() => { setBlockerEdit(null); setBlockerEditError(""); }}>返回延时选项</button>
-              <button className="primary" disabled={loading}>保存并更新时间</button>
+              <button type="button" className="secondary" onClick={() => setBlockerEdit(null)}>返回延时选项</button>
+              <button className="primary" disabled={loading || !blockerEdit.tasks.some((task) => task.status !== "已完成")}>保存并更新计划</button>
             </div>
           </form>
         </Modal>

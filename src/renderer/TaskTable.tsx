@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState, type DragEvent, type PointerEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { AlertCircle, ArrowDown, ArrowUp, GripVertical, Trash2 } from 'lucide-react';
 import { getScheduleSegments, getScheduleOverflowTasks, type Task, type ScheduledTask, type AvailabilityBlock, type Priority } from '../shared/domain';
 function ScheduleTime({
@@ -46,24 +46,25 @@ export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdat
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; position: 'before' | 'after'; index: number } | null>(null);
+  const [dragPreview, setDragPreview] = useState<{
+    left: number; top: number; width: number; height: number; offsetX: number; offsetY: number; task: ScheduledTask;
+  } | null>(null);
   const dropTargetRef = useRef<typeof dropTarget>(null);
+  const removeDragListenersRef = useRef<(() => void) | null>(null);
   const unscheduled = schedule.filter((task) => !task.scheduled && task.status !== "已完成").length;
   const overflowTasks = getScheduleOverflowTasks(schedule, availability);
 
-  function getDropPosition(clientY: number, rect: DOMRect, sourceIndex: number, hoveredIndex: number) {
-    const ratio = (clientY - rect.top) / rect.height;
-    if (ratio < .35) return 'before' as const;
-    if (ratio > .65) return 'after' as const;
+  function getDropPosition(sourceIndex: number, hoveredIndex: number) {
     return sourceIndex > hoveredIndex ? 'before' as const : 'after' as const;
   }
 
-  function updateDropTarget(task: ScheduledTask, clientY: number) {
-    const row = document.querySelector<HTMLElement>(`.task-row[data-task-id="${CSS.escape(task.id)}"]`);
-    if (!row || !draggingId || draggingId === task.id) return;
-    const rect = row.getBoundingClientRect();
-    const sourceIndex = schedule.findIndex(item => item.id === draggingId);
+  useEffect(() => () => removeDragListenersRef.current?.(), []);
+
+  function updateDropTarget(task: ScheduledTask, sourceId: string) {
+    if (sourceId === task.id) return;
+    const sourceIndex = schedule.findIndex(item => item.id === sourceId);
     const hoveredIndex = schedule.findIndex(item => item.id === task.id);
-    const position = getDropPosition(clientY, rect, sourceIndex, hoveredIndex);
+    const position = getDropPosition(sourceIndex, hoveredIndex);
     const slot = hoveredIndex + (position === 'after' ? 1 : 0);
     const index = Math.max(0, Math.min(schedule.length - 1, slot > sourceIndex ? slot - 1 : slot));
     const target = { id: task.id, position, index } as const;
@@ -71,30 +72,71 @@ export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdat
     setDropTarget(target);
   }
 
-  function finishDrag() {
-    if (draggingId && dropTargetRef.current) onReorderTask(draggingId, dropTargetRef.current.index);
+  function resetDrag() {
     setDraggingId(null);
+    setDragPreview(null);
     dropTargetRef.current = null;
     setDropTarget(null);
+    document.body.classList.remove('task-drag-active');
   }
 
-  function handleDragOver(event: DragEvent<HTMLDivElement>, task: ScheduledTask) {
+  function startPointerDrag(event: ReactPointerEvent<HTMLSpanElement>, task: ScheduledTask) {
+    if (event.button !== 0 || schedule.length < 2) return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    if (draggingId) updateDropTarget(task, event.clientY);
-  }
+    const row = event.currentTarget.closest<HTMLElement>('.task-row');
+    if (!row) return;
+    const rect = row.getBoundingClientRect();
+    const sourceIndex = schedule.findIndex(item => item.id === task.id);
+    const initialTarget = { id: task.id, position: 'before' as const, index: sourceIndex };
+    const pointerId = event.pointerId;
+    setDraggingId(task.id);
+    setDragPreview({
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      task,
+    });
+    dropTargetRef.current = initialTarget;
+    setDropTarget(initialTarget);
+    document.body.classList.add('task-drag-active');
 
-  function handleTouchStart(event: PointerEvent<HTMLSpanElement>, taskId: string) {
-    if (event.pointerType !== 'touch') return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setDraggingId(taskId);
-  }
-
-  function handleTouchMove(event: PointerEvent<HTMLSpanElement>) {
-    if (event.pointerType !== 'touch' || !draggingId) return;
-    const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('.task-row');
-    const targetTask = row ? schedule.find(task => task.id === row.dataset.taskId) : undefined;
-    if (targetTask) updateDropTarget(targetTask, event.clientY);
+    const stopListening = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerCancel);
+      removeDragListenersRef.current = null;
+    };
+    const handlePointerMove = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      pointerEvent.preventDefault();
+      setDragPreview(current => current ? {
+        ...current,
+        left: pointerEvent.clientX - current.offsetX,
+        top: pointerEvent.clientY - current.offsetY,
+      } : current);
+      const targetRow = document.elementFromPoint(pointerEvent.clientX, pointerEvent.clientY)?.closest<HTMLElement>('.task-row');
+      const targetTask = targetRow ? schedule.find(item => item.id === targetRow.dataset.taskId) : undefined;
+      if (targetTask) updateDropTarget(targetTask, task.id);
+    };
+    const handlePointerUp = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      stopListening();
+      const targetIndex = dropTargetRef.current?.index ?? sourceIndex;
+      resetDrag();
+      if (targetIndex !== sourceIndex) onReorderTask(task.id, targetIndex);
+    };
+    const handlePointerCancel = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      stopListening();
+      resetDrag();
+    };
+    window.addEventListener('pointermove', handlePointerMove, { passive: false });
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerCancel);
+    removeDragListenersRef.current = stopListening;
   }
 
   return (
@@ -104,27 +146,10 @@ export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdat
           <div className="table-head"><span /><span>任务与完成标准</span><span>时间</span><span>优先级</span><span>耗时 / 操作</span></div>
           {visibleTasks.map(item => { const index = schedule.findIndex(task => task.id === item.id); const task = schedule[index]; if (!task) return null; const showBefore = dropTarget?.id === task.id && dropTarget.position === 'before'; const showAfter = dropTarget?.id === task.id && dropTarget.position === 'after'; return (
             <Fragment key={task.id}>
-            {showBefore && <div className="task-drop-placeholder" aria-hidden="true"><span>放在这里</span></div>}
+            {showBefore && <div className="task-drop-placeholder" aria-hidden="true" style={{ minHeight: dragPreview?.height }}><span>松手放在这里</span></div>}
             <div
               data-task-id={task.id}
               className={'task-row todo-item' + (task.status === '已完成' ? ' done' : '') + (draggingId === task.id ? ' dragging' : '')}
-              onDragOver={event => handleDragOver(event, task)}
-              onDrop={event => {
-                event.preventDefault();
-                const sourceId = draggingId ?? event.dataTransfer.getData('text/plain');
-                const sourceIndex = schedule.findIndex(item => item.id === sourceId);
-                const rect = event.currentTarget.getBoundingClientRect();
-                const position = getDropPosition(event.clientY, rect, sourceIndex, index);
-                const slot = index + (position === 'after' ? 1 : 0);
-                const droppedOnHandle = (event.target as Element).closest('.task-drag-handle');
-                const targetIndex = droppedOnHandle
-                  ? index
-                  : Math.max(0, Math.min(schedule.length - 1, slot > sourceIndex ? slot - 1 : slot));
-                if (sourceId) onReorderTask(sourceId, targetIndex);
-                setDraggingId(null);
-                dropTargetRef.current = null;
-                setDropTarget(null);
-              }}
             >
               <input className="task-check" type="checkbox" aria-label={'完成 ' + task.title} checked={pendingChecks[task.id] ?? task.status === '已完成'} onChange={event => onToggle(task, event.target.checked)} />
               <div className="time-cell">
@@ -134,20 +159,10 @@ export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdat
                 <div className="task-order" aria-label={task.title + ' 排序'}>
                   <span
                     className="task-drag-handle"
-                    draggable
                     role="img"
                     aria-label={'拖动排序 ' + task.title}
-                    title="拖动到目标任务的位置"
-                    onDragStart={event => {
-                      event.dataTransfer.effectAllowed = 'move';
-                      event.dataTransfer.setData('text/plain', task.id);
-                      setDraggingId(task.id);
-                    }}
-                    onDragEnd={() => { setDraggingId(null); dropTargetRef.current = null; setDropTarget(null); }}
-                    onPointerDown={event => handleTouchStart(event, task.id)}
-                    onPointerMove={handleTouchMove}
-                    onPointerUp={event => { if (event.pointerType === 'touch') finishDrag(); }}
-                    onPointerCancel={() => { setDraggingId(null); dropTargetRef.current = null; setDropTarget(null); }}
+                    title="按住并拖动到目标位置"
+                    onPointerDown={event => startPointerDrag(event, task)}
                   ><GripVertical size={16} /></span>
                   <span className="task-position">第 {index + 1} 项</span>
                 <div className="row-tools"><button className="link-button" aria-label={'编辑 ' + task.title} onClick={() => onEdit(task)}>编辑</button>{onMoveToday && task.status !== '已完成' && <button className="link-button" aria-label={'移到今天 ' + task.title} onClick={() => onMoveToday(task)}>移到今天</button>}</div>
@@ -207,7 +222,7 @@ export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdat
                 </button>
               </div>
             </div>
-            {showAfter && <div className="task-drop-placeholder" aria-hidden="true"><span>放在这里</span></div>}
+            {showAfter && <div className="task-drop-placeholder" aria-hidden="true" style={{ minHeight: dragPreview?.height }}><span>松手放在这里</span></div>}
             </Fragment>
           ); })}
         </div>
@@ -216,6 +231,15 @@ export function TaskTable({ tasks, schedule, availability, onUpdateTask, onUpdat
           <details className="plan-help"><summary>排程与提醒说明</summary><p>拖动手柄或点击箭头改变顺序后，会按可用时段重新排程，替换手动设置的时间。已完成任务不占用新排程。</p><p>修改自动保存为草稿，再次确认后更新提醒。不可用时段不发送提醒；30 分钟以内不设置中途检查点。</p><p>{schedule.filter(task => task.scheduled).length} 项已安排，共 {tasks.reduce((sum, task) => sum + task.duration, 0)} 分钟。</p></details>
         </aside>
       </div>
+      {dragPreview && <div
+        className="task-drag-preview"
+        aria-hidden="true"
+        style={{ left: dragPreview.left, top: dragPreview.top, width: dragPreview.width }}
+      >
+        <GripVertical size={18} />
+        <div><strong>{dragPreview.task.title}</strong><small>{dragPreview.task.doneDefinition}</small></div>
+        <span>{dragPreview.task.priority}优先级 · {dragPreview.task.duration} 分钟</span>
+      </div>}
     </section>
   );
 }

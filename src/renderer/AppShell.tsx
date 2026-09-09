@@ -14,7 +14,7 @@ function initialTheme(): Theme {
   const saved = window.localStorage.getItem('ai-todo-theme');
   const theme = saved === 'dark' || saved === 'light'
     ? saved
-    : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    : 'light';
   document.documentElement.dataset.theme = theme;
   return theme;
 }

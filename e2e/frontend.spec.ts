@@ -586,6 +586,7 @@ test('explicit top-right AI settings button remains available while executing an
 
 test('theme switch uses the toggle origin and remembers the selected theme', async ({ page }, info) => {
   const { errors } = await boot(page, { view: 'list' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   const toggle = page.getByRole('button', { name: '切换到深色主题', exact: true });
   await toggle.click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -767,7 +768,30 @@ test('review drag handle moves a task to the target position without confirming 
   const { calls, errors } = await boot(page, { state: { ...emptyState, tasks, schedule: buildSchedule(tasks, defaultAvailability, 0), confirmed: true, version: 1 } });
   await page.locator('.sidebar').getByRole('button', { name: '任务清单' }).click();
   await page.locator('.task-row').first().evaluate(row => row.scrollIntoView({ block: 'start' }));
-  await page.getByRole('img', { name: '拖动排序 检查邮件', exact: true }).dragTo(page.getByRole('img', { name: '拖动排序 整理资料', exact: true }));
+  async function dragTask(sourceName: string, targetName: string) {
+    const source = page.getByRole('img', { name: '拖动排序 ' + sourceName, exact: true });
+    const target = page.getByLabel(targetName + ' 任务名称', { exact: true })
+      .locator('xpath=ancestor::div[contains(@class,"task-row")]');
+    const sourceBox = await source.boundingBox();
+    const targetBox = await target.boundingBox();
+    expect(sourceBox).not.toBeNull();
+    expect(targetBox).not.toBeNull();
+    await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 8 });
+    const settledTargetBox = await target.boundingBox();
+    expect(settledTargetBox).not.toBeNull();
+    const dropRatio = sourceBox!.y > targetBox!.y ? .2 : .8;
+    await page.mouse.move(
+      settledTargetBox!.x + settledTargetBox!.width / 2,
+      settledTargetBox!.y + settledTargetBox!.height * dropRatio,
+      { steps: 4 },
+    );
+    await expect(page.locator('.task-drag-preview')).toBeVisible();
+    await expect(page.locator('.task-drop-placeholder')).toContainText('松手放在这里');
+    await page.mouse.up();
+  }
+  await dragTask('检查邮件', '整理资料');
   await expect(page.locator('.task-title-input').nth(0)).toHaveValue('检查邮件');
   await expect(page.getByRole('status')).toContainText('任务顺序已保存');
   expect(calls.filter(call => call.method === 'confirmPlan')).toHaveLength(0);
@@ -776,9 +800,9 @@ test('review drag handle moves a task to the target position without confirming 
   await expect(page.locator('.task-title-input').nth(0)).toHaveValue('检查邮件');
   await expect(page.getByLabel('检查邮件 开始时间', { exact: true })).toHaveValue('09:00');
   await page.locator('.task-row').first().evaluate(row => row.scrollIntoView({ block: 'start' }));
-  await page.getByRole('img', { name: '拖动排序 检查邮件', exact: true }).dragTo(page.getByRole('img', { name: '拖动排序 撰写报告', exact: true }));
+  await dragTask('检查邮件', '撰写报告');
   await expect(page.locator('.task-title-input').nth(2)).toHaveValue('检查邮件');
-  await expect(page.locator('.task-row.dragging, .task-row.drop-target')).toHaveCount(0);
+  await expect(page.locator('.task-row.dragging, .task-drop-placeholder, .task-drag-preview')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

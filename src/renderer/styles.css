@@ -166,10 +166,19 @@ small { font-size:12px; }
 .task-drag-handle:active { cursor:grabbing; }
 .order-button { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border:1px solid var(--line); border-radius:4px; background:var(--surface); color:var(--muted); padding:0; }
 .order-button:hover:not(:disabled) { color:var(--green); background:var(--mint); }
-.task-row.dragging { opacity:.24; transform:scale(.985); background:var(--mint); box-shadow:0 10px 24px #1c31531f; }
-.task-drop-placeholder { display:grid; place-items:center; min-height:64px; margin:7px 10px; border:1px dashed var(--green); border-radius:7px; color:var(--green); background:var(--mint); animation:placeholder-in 180ms cubic-bezier(.2,.8,.2,1); }
+.task-drag-active, .task-drag-active * { cursor:grabbing !important; user-select:none !important; }
+.task-row.dragging { display:none; }
+.task-drop-placeholder { display:grid; place-items:center; min-height:64px; margin:7px 10px; border:1px dashed var(--green); border-radius:7px; color:var(--green); background:var(--mint); animation:placeholder-in 180ms cubic-bezier(.16,1,.3,1); }
 .task-drop-placeholder span { font-size:11px; }
 @keyframes placeholder-in { from { min-height:8px; opacity:0; } }
+.task-drag-preview { position:fixed; z-index:1000; display:grid; grid-template-columns:28px minmax(0,1fr) auto; align-items:center; gap:10px; min-height:72px; padding:12px 14px; color:var(--ink); background:color-mix(in srgb, var(--surface) 94%, transparent); border:1px solid color-mix(in srgb, var(--green) 60%, var(--line)); border-radius:9px; box-shadow:0 18px 42px #14244335, 0 3px 10px #14244324; pointer-events:none; transform:rotate(.6deg) scale(1.012); animation:drag-lift 160ms cubic-bezier(.16,1,.3,1); backdrop-filter:blur(10px); }
+.task-drag-preview > svg { color:var(--green); }
+.task-drag-preview div { min-width:0; }
+.task-drag-preview strong, .task-drag-preview small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.task-drag-preview strong { font-size:13px; }
+.task-drag-preview small, .task-drag-preview > span { margin-top:5px; color:var(--muted); font-size:10px; }
+.task-drag-preview > span { margin:0; white-space:nowrap; }
+@keyframes drag-lift { from { opacity:.55; transform:rotate(0) scale(.97); box-shadow:0 4px 12px #14244318; } }
 .review-aside { display:flex; flex-direction:column; gap:12px; }
 .warning-card { display:flex; align-items:flex-start; gap:10px; color:#865924; background:#fffaed; border:1px solid #f0dfb7; border-radius:6px; padding:13px; font-size:12px; }
 .warning-card > svg { flex-shrink:0; }

@@ -14,13 +14,13 @@ export function Execute({ schedule, currentTask, progress, countdownSeconds, isA
   const canAct = isActiveTask && !done;
   const label = done ? '任务已完成' : pausedCountdownSeconds !== null ? '倒计时已暂停' : isRunning && isActiveTask ? '任务倒计时' : isActiveTask ? '等待开始' : '等待前置任务';
   return <section>
-    <div className="heading-row"><div><h1>执行跟进</h1><p>专注当前任务，完成后自动开始下一项。</p></div><button className="secondary" onClick={onReview}>查看完整计划</button></div>
+    <div className="heading-row"><div><h1>执行跟进</h1><p>提前完成时，可手动开始下一项或等待原计划时间。</p></div><button className="secondary" onClick={onReview}>查看完整计划</button></div>
     <div className="execute-grid">
       <div className="focus-card">
         <div className="focus-top"><div><span className="focus-kicker">{done ? '已完成' : isActiveTask ? '当前任务' : '待执行'}</span><h2>{currentTask.title}</h2><p>{currentTask.doneDefinition}</p></div><span className="time-chip"><Clock3 size={14} />{formatScheduleLabel(currentTask)}</span></div>
         <div className="countdown-ring" role="timer" aria-label="任务倒计时" aria-live="off"><small>{label}</small><strong>{countdownLabel(countdownSeconds)}</strong></div>
         <div className="focus-footer">
-          {done ? nextTask ? <button className="primary" onClick={onStartNext}>开始下一任务<ChevronRight size={16} /></button> : <p className="completion-message"><Check size={18} />计划中的任务已全部完成。</p> : <><button className="secondary" disabled={!canAct} onClick={onToggleRunning}>{isRunning ? <Pause size={16} /> : <Play size={16} />}{isRunning ? '暂停任务' : '继续任务'}</button><button className="primary" disabled={!canAct} onClick={onComplete}><Check size={17} />标记为已完成</button></>}
+          {done ? nextTask ? <><button className="primary" onClick={onStartNext}>开始下一任务<ChevronRight size={16} /></button><span className="waiting-next">否则将在 {nextTask.startLabel} 按原计划自动开始</span></> : <p className="completion-message"><Check size={18} />计划中的任务已全部完成。</p> : <><button className="secondary" disabled={!canAct} onClick={onToggleRunning}>{isRunning ? <Pause size={16} /> : <Play size={16} />}{isRunning ? '暂停任务' : '继续任务'}</button><button className="primary" disabled={!canAct} onClick={onComplete}><Check size={17} />标记为已完成</button></>}
         </div>
         <div className="progress-section"><div className="progress-caption"><span>任务进度</span><strong>{progress}%</strong></div><div className="progress-track" role="progressbar" aria-label="当前任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><i style={{ width: progress + '%' }} /></div><div className="quick-actions">{[25, 50, 75].map(value => <button key={value} className={progress === value ? 'selected' : ''} disabled={!canAct} onClick={() => onProgress(value)}>完成 {value}%</button>)}<button className="blocker-button" disabled={!canAct} onClick={onBlocker}>遇到阻碍</button></div></div>
         <p className="reminder-hint"><BellRing size={15} />{reminderInterval ? `每 ${reminderInterval} 分钟提醒同步进度` : '仅在任务开始和结束时提醒'}</p>

@@ -298,14 +298,51 @@ test("capture, edit, confirm, progress and completion keep the full workflow", a
   await expect(countdown).toHaveText("00:20:00");
   await expect(page.getByRole("timer").locator("small")).toHaveText("任务倒计时");
   await capture(page, info, "execute");
+  const confirmCountBeforeCompletion = calls.filter((call) => call.method === "confirmPlan").length;
   await page.getByRole("button", { name: "标记为已完成" }).click();
+  await expect(page.locator(".focus-top h2")).toHaveText("准备周会演示");
+  await expect(page.locator(".time-chip")).toHaveText("08:30–09:30");
+  await expect(page.getByRole("button", { name: "开始下一任务", exact: true })).toBeVisible();
+  await expect(page.getByText("否则将在 09:30 按原计划自动开始", { exact: true })).toBeVisible();
+  await expect(page.locator(".timeline-item").nth(1)).toContainText("09:30–10:00");
+  await expect(page.locator(".timeline-item.done")).toContainText("准备周会演示");
+  await reloadAndReturn(page);
+  await expect(page.locator(".focus-top h2")).toHaveText("准备周会演示");
+  await expect(page.getByRole("button", { name: "开始下一任务", exact: true })).toBeVisible();
+  await expect(page.locator(".timeline-item").nth(1)).toContainText("09:30–10:00");
+  await page.clock.setFixedTime(new Date("2026-09-05T09:29:59+08:00"));
+  await page.waitForTimeout(1100);
+  await expect(page.locator(".focus-top h2")).toHaveText("准备周会演示");
+  await page.clock.setFixedTime(new Date("2026-09-05T09:30:00+08:00"));
+  await page.waitForTimeout(1100);
   await expect(page.locator(".focus-top h2")).toHaveText("回复客户邮件");
-  await expect(page.locator(".time-chip")).toHaveText("09:10–09:40");
+  await expect(page.locator(".time-chip")).toHaveText("09:30–10:00");
   await expect(page.getByRole("button", { name: "暂停任务", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "开始下一任务", exact: true })).toHaveCount(0);
-  await expect(page.locator(".timeline-item.done")).toContainText("准备周会演示");
-  expect(calls.filter((call) => call.method === "confirmPlan").at(-1)?.input.reason).toBe("完成后自动开始下一任务");
+  expect(calls.filter((call) => call.method === "confirmPlan")).toHaveLength(confirmCountBeforeCompletion);
   expect(errors).toEqual([]);
+});
+
+test("starts the next task from the current time only after an explicit early start", async ({ page }) => {
+  const tasks = starterTasks.slice(0, 2).map((task, index) => ({
+    ...task,
+    id: "early-start-task-" + index,
+    duration: index === 0 ? 60 : 30,
+  }));
+  const availability = [{ id: "day", start: "09:00", end: "18:00", kind: "available" as const }];
+  const schedule = buildSchedule(tasks, availability, 9 * 60);
+  const { calls } = await boot(page, {
+    currentTime: "2026-09-05T09:15:00+08:00",
+    state: { tasks, schedule, availability, version: 1, confirmed: true },
+  });
+  await page.getByRole("button", { name: "标记为已完成" }).click();
+  await expect(page.locator(".timeline-item").nth(1)).toContainText("10:00–10:30");
+  await page.getByRole("button", { name: "开始下一任务", exact: true }).click();
+  await expect(page.locator(".focus-top h2")).toHaveText(tasks[1].title);
+  await expect(page.locator(".time-chip")).toHaveText("09:15–09:45");
+  const startCall = calls.filter((call) => call.method === "confirmPlan").at(-1)!.input;
+  expect(startCall.reason).toBe("开始下一任务");
+  expect(startCall.schedule[1]).toMatchObject({ startMinutes: 555, endMinutes: 585 });
 });
 
 test("uses the current task end time for countdown after an earlier task has expired", async ({ page }) => {
@@ -413,14 +450,16 @@ test("restores a confirmed plan, delays a blocked task and edits its time in pla
   await page.getByRole("button", { name: "直接修改任务与时段", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "快捷修改任务与时段" });
   await editor.getByLabel("任务名称").fill("补充 Demo 交互");
+  await editor.getByLabel("完成标准").fill("完成交互并通过自测");
   await editor.getByLabel("优先级").selectOption("高");
   await editor.getByLabel("开始时间").fill("08:15");
-  await editor.getByLabel("结束时间").fill("10:45");
+  await editor.getByLabel("预计时长（分钟）").fill("150");
+  await expect(editor.getByLabel("结束时间")).toHaveValue("10:45");
   await editor.getByRole("button", { name: "保存并更新时间" }).click();
   await expect(editor).toHaveCount(0);
   await expect(page.getByRole("status")).toContainText("对应时段已更新");
   const editCall = calls.filter((call) => call.method === "confirmPlan").at(-1)!.input;
-  expect(editCall.tasks[0]).toMatchObject({ title: "补充 Demo 交互", priority: "高", duration: 150 });
+  expect(editCall.tasks[0]).toMatchObject({ title: "补充 Demo 交互", doneDefinition: "完成交互并通过自测", priority: "高", duration: 150 });
   expect(editCall.schedule[0]).toMatchObject({ title: "补充 Demo 交互", startMinutes: 495, endMinutes: 645 });
   expect(editCall.schedule[1].startMinutes).toBe(645);
 

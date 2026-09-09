@@ -40,10 +40,22 @@ const reasons = [
 function totalMinutes(tasks: Task[]) {
   return tasks.reduce((sum, task) => sum + task.duration, 0);
 }
+function timeInputLabel(minutes: number) {
+  const value = Math.max(0, Math.min(1439, Math.round(minutes)));
+  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+}
 function getNextPendingTask(schedule: ScheduledTask[], currentTaskId: string) {
   const currentIndex = schedule.findIndex((task) => task.id === currentTaskId);
   if (currentIndex < 0) return undefined;
   return schedule.slice(currentIndex + 1).find((task) => task.status !== "已完成");
+}
+function getExecutionTaskForNow(schedule: ScheduledTask[], now = new Date()) {
+  const pendingTask = getCurrentScheduledTask(schedule, now);
+  if (!pendingTask?.scheduled || pendingTask.startMinutes === null) return pendingTask;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+  if (pendingTask.startMinutes <= nowMinutes) return pendingTask;
+  const pendingIndex = schedule.findIndex((task) => task.id === pendingTask.id);
+  return schedule.slice(0, pendingIndex).reverse().find((task) => task.status === "已完成") ?? pendingTask;
 }
 
 type ReminderAlert = {
@@ -111,7 +123,9 @@ export function App() {
   const [customDelay, setCustomDelay] = useState("");
   const [blockerEdit, setBlockerEdit] = useState<{
     title: string;
+    doneDefinition: string;
     priority: Task['priority'];
+    duration: number;
     start: string;
     end: string;
   } | null>(null);
@@ -139,7 +153,7 @@ export function App() {
             ? state.schedule
             : buildSchedule(state.tasks, state.availability);
           const restoredCurrentTask = state.confirmed
-            ? getCurrentScheduledTask(restoredSchedule)
+            ? getExecutionTaskForNow(restoredSchedule)
             : undefined;
           setTasks(state.tasks);
           setAvailability(state.availability);
@@ -151,13 +165,13 @@ export function App() {
               state.tasks[0].id,
           );
           setActiveTaskId(
-            state.confirmed
+            state.confirmed && restoredCurrentTask?.status !== "已完成"
               ? restoredCurrentTask?.id ??
                   restoredSchedule.find((task) => task.scheduled && task.status !== "已完成")?.id ??
                   null
               : null
           );
-          setIsRunning(state.confirmed && Boolean(restoredCurrentTask));
+          setIsRunning(state.confirmed && Boolean(restoredCurrentTask) && restoredCurrentTask?.status !== "已完成");
           setView("list");
           setNotice(`已恢复本地计划 v${state.version}`);
         }
@@ -202,10 +216,22 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (view !== "execute" || manuallySelectedTaskId || !isRunning) return;
-    const nextTask = getCurrentScheduledTask(schedule, now);
+    if (view !== "execute" || manuallySelectedTaskId) return;
     const selectedTask = schedule.find((task) => task.id === currentTaskId);
     const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+    if (selectedTask?.status === '已完成') {
+      const waitingTask = getNextPendingTask(schedule, selectedTask.id);
+      if (waitingTask?.startMinutes !== null && waitingTask?.startMinutes !== undefined && nowMinutes >= waitingTask.startMinutes) {
+        setCurrentTaskId(waitingTask.id);
+        setActiveTaskId(waitingTask.id);
+        setPausedCountdownSeconds(null);
+        setIsRunning(true);
+        setNotice(`已到原计划开始时间，开始“${waitingTask.title}”。`);
+      }
+      return;
+    }
+    if (!isRunning) return;
+    const nextTask = getCurrentScheduledTask(schedule, now);
     if (
       nextTask &&
       (!selectedTask ||
@@ -241,9 +267,10 @@ export function App() {
     setVersion(state.version); setConfirmed(state.confirmed);
     setProgress(Object.fromEntries(state.tasks.map(task => [task.id, task.progress ?? (task.status === '已完成' ? 100 : 0)])));
     setCurrentTaskId(state.tasks.find(task => task.status !== '已完成')?.id ?? state.tasks[0]?.id ?? '');
-    const restored = state.confirmed && selectedDay === localDayText() ? getCurrentScheduledTask(state.schedule) : undefined;
+    const restored = state.confirmed && selectedDay === localDayText() ? getExecutionTaskForNow(state.schedule) : undefined;
     if (restored) setCurrentTaskId(restored.id);
-    setActiveTaskId(restored?.id ?? null); setIsRunning(Boolean(restored)); setPausedCountdownSeconds(null); setManuallySelectedTaskId(null);
+    const restoredIsPending = Boolean(restored && restored.status !== "已完成");
+    setActiveTaskId(restoredIsPending ? restored?.id ?? null : null); setIsRunning(restoredIsPending); setPausedCountdownSeconds(null); setManuallySelectedTaskId(null);
   }
 
   async function changeDay(nextDay: string) {
@@ -498,43 +525,15 @@ export function App() {
     );
     setPausedCountdownSeconds(null);
     const next = getNextPendingTask(completedSchedule, currentTask.id);
-    if (next) {
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
-      const nextSchedule = reflowScheduleFromTask(completedSchedule, next.id, nowMinutes, next.duration);
-      setLoading(true);
-      try {
-        if (!await pendingSave.current) throw new Error("保存失败");
-        const state = await window.aiTodo.confirmPlan({
-          day,
-          tasks: completedTasks,
-          availability,
-          schedule: nextSchedule,
-          reason: "完成后自动开始下一任务",
-        });
-        setVersion(state.version);
-        setTasks(completedTasks);
-        setSchedule(nextSchedule);
-        setCurrentTaskId(next.id);
-        setActiveTaskId(next.id);
-        setManuallySelectedTaskId(null);
-        setIsRunning(true);
-        setNotice("“" + currentTask.title + "”已完成，已自动开始“" + next.title + "”，后续时间已前移。");
-        return;
-      } catch {
-        setTasks(completedTasks);
-        setSchedule(completedSchedule);
-        setActiveTaskId(null);
-        setIsRunning(false);
-        setNotice("“" + currentTask.title + "”已完成，但下一任务自动开始失败，请点击“开始下一任务”重试。");
-        return;
-      } finally {
-        setLoading(false);
-      }
-    }
     setTasks(completedTasks);
     setSchedule(completedSchedule);
     setActiveTaskId(null);
+    setManuallySelectedTaskId(null);
     setIsRunning(false);
+    if (next) {
+      setNotice(`“${currentTask.title}”已完成。后续计划保持不变；“${next.title}”将在 ${next.startLabel} 开始，也可以现在开始。`);
+      return;
+    }
     setNotice("今天计划中的任务已全部完成。");
   }
 
@@ -625,16 +624,38 @@ export function App() {
     if (!currentTask) return;
     const startMinutes = currentTask.startMinutes ?? now.getHours() * 60 + now.getMinutes();
     const endMinutes = currentTask.endMinutes ?? startMinutes + currentTask.duration;
-    const label = (minutes: number) => {
-      const value = Math.max(0, Math.min(1439, Math.round(minutes)));
-      return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
-    };
     setBlockerEdit({
       title: currentTask.title,
+      doneDefinition: currentTask.doneDefinition,
       priority: currentTask.priority,
-      start: label(startMinutes),
-      end: label(endMinutes),
+      duration: currentTask.duration,
+      start: timeInputLabel(startMinutes),
+      end: timeInputLabel(endMinutes),
     });
+    setBlockerEditError("");
+  }
+
+  function updateBlockerStart(start: string) {
+    if (!blockerEdit) return;
+    const startMinutes = parseTime(start);
+    const duration = Math.min(blockerEdit.duration, Math.max(1, 1439 - startMinutes));
+    setBlockerEdit({ ...blockerEdit, start, duration, end: timeInputLabel(startMinutes + duration) });
+    setBlockerEditError("");
+  }
+
+  function updateBlockerEnd(end: string) {
+    if (!blockerEdit) return;
+    const startMinutes = parseTime(blockerEdit.start);
+    const endMinutes = parseTime(end);
+    setBlockerEdit({ ...blockerEdit, end, duration: endMinutes > startMinutes ? endMinutes - startMinutes : blockerEdit.duration });
+    setBlockerEditError("");
+  }
+
+  function updateBlockerDuration(value: number) {
+    if (!blockerEdit || !Number.isFinite(value)) return;
+    const startMinutes = parseTime(blockerEdit.start);
+    const duration = Math.max(1, Math.min(Math.round(value), Math.max(1, 1439 - startMinutes)));
+    setBlockerEdit({ ...blockerEdit, duration, end: timeInputLabel(startMinutes + duration) });
     setBlockerEditError("");
   }
 
@@ -653,10 +674,10 @@ export function App() {
     }
     const duration = endMinutes - startMinutes;
     const nextTasks = tasks.map(task => task.id === currentTask.id
-      ? { ...task, title, priority: blockerEdit.priority, duration }
+      ? { ...task, title, doneDefinition: blockerEdit.doneDefinition.trim(), priority: blockerEdit.priority, duration }
       : task);
     const nextSchedule = reflowScheduleFromTask(schedule, currentTask.id, startMinutes, duration)
-      .map(task => task.id === currentTask.id ? { ...task, title, priority: blockerEdit.priority } : task);
+      .map(task => task.id === currentTask.id ? { ...task, title, doneDefinition: blockerEdit.doneDefinition.trim(), priority: blockerEdit.priority } : task);
     const pausedSeconds = pausedCountdownSeconds === null
       ? undefined
       : Math.max(0, Math.round((endMinutes - (now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60)) * 60));
@@ -889,10 +910,12 @@ export function App() {
           <p>保存后，后续任务和提醒会从新的结束时间继续顺延。</p>
           <form className="blocker-editor" onSubmit={event => { event.preventDefault(); saveBlockerEdit(); }}>
             <label>任务名称<input required maxLength={200} value={blockerEdit.title} onChange={event => setBlockerEdit({ ...blockerEdit, title: event.target.value })} /></label>
+            <label>完成标准<textarea maxLength={1000} rows={3} value={blockerEdit.doneDefinition} onChange={event => setBlockerEdit({ ...blockerEdit, doneDefinition: event.target.value })} /></label>
             <div className="blocker-editor-grid">
               <label>优先级<select value={blockerEdit.priority} onChange={event => setBlockerEdit({ ...blockerEdit, priority: event.target.value as Task['priority'] })}><option>高</option><option>中</option><option>低</option></select></label>
-              <label>开始时间<input type="time" required value={blockerEdit.start} onChange={event => setBlockerEdit({ ...blockerEdit, start: event.target.value })} /></label>
-              <label>结束时间<input type="time" required value={blockerEdit.end} onChange={event => setBlockerEdit({ ...blockerEdit, end: event.target.value })} /></label>
+              <label>预计时长（分钟）<input type="number" required min={1} max={1440} value={blockerEdit.duration} onChange={event => updateBlockerDuration(Number(event.target.value))} /></label>
+              <label>开始时间<input type="time" required value={blockerEdit.start} onChange={event => updateBlockerStart(event.target.value)} /></label>
+              <label>结束时间<input type="time" required value={blockerEdit.end} onChange={event => updateBlockerEnd(event.target.value)} /></label>
             </div>
             {blockerEditError && <p className="blocker-edit-error" role="alert">{blockerEditError}</p>}
             <div className="modal-actions">

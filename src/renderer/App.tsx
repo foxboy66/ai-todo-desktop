@@ -10,12 +10,11 @@ import type { PlanSnapshot } from '../shared/domain';
 import { defaultAiSettings, type AiSettings } from '../shared/ai-settings';
 import { AiSettingsForm } from './AiSettingsForm';
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, BellRing, ChevronRight, Sparkles, X } from 'lucide-react';
+import { AlertCircle, BellRing, ChevronRight, Clock3, PencilLine, X } from 'lucide-react';
 import {
   buildSchedule,
   createDraftTask,
   defaultAvailability,
-  formatScheduleLabel,
   getCurrentScheduledTask,
   getReminderInterval,
   getScheduleOverflowTasks,
@@ -106,12 +105,17 @@ export function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [pausedCountdownSeconds, setPausedCountdownSeconds] = useState<number | null>(null);
   const [progress, setProgress] = useState<Record<string, number>>({});
-  const [blocker, setBlocker] = useState<{
-    reason?: string;
-    suggestion?: { tasks: Task[]; schedule: ScheduledTask[] };
-  }>({});
+  const [blocker, setBlocker] = useState<{ reason?: string }>({});
   const [blockerOpen, setBlockerOpen] = useState(false);
   const [customReason, setCustomReason] = useState("");
+  const [customDelay, setCustomDelay] = useState("");
+  const [blockerEdit, setBlockerEdit] = useState<{
+    title: string;
+    priority: Task['priority'];
+    start: string;
+    end: string;
+  } | null>(null);
+  const [blockerEditError, setBlockerEditError] = useState("");
   const [reminderAlert, setReminderAlert] = useState<ReminderAlert | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
@@ -554,29 +558,115 @@ export function App() {
     setNotice("已开始“" + nextTask.title + "”，后续任务时间已按实际开始时间自动前移。");
   }
 
-  async function chooseReason(reason: string) {
-    const normalizedReason = normalizeBlockerReason(reason);
-    if (!currentTask || !normalizedReason) return;
-    const suggestion = await window.aiTodo.suggestReplan({
-      day, tasks,
-      availability,
-      currentTaskId: currentTask.id,
-      reason: normalizedReason,
-    });
-    setBlocker({ reason: normalizedReason, suggestion });
+  function closeBlockerFlow() {
+    setBlocker({});
+    setCustomReason("");
+    setCustomDelay("");
+    setBlockerEdit(null);
+    setBlockerEditError("");
+    setBlockerOpen(false);
   }
 
-  async function applyReplan() {
-    if (!blocker.suggestion) return;
-    persistDraft(blocker.suggestion.tasks, availability, blocker.suggestion.schedule);
-    setTasks(blocker.suggestion.tasks);
-    setSchedule(blocker.suggestion.schedule);
+  function chooseReason(reason: string) {
+    const normalizedReason = normalizeBlockerReason(reason);
+    if (!currentTask || !normalizedReason) return;
+    setBlocker({ reason: normalizedReason });
+    setCustomDelay("");
+  }
 
-    setBlocker({});
-    setBlockerOpen(false);
-    setCustomReason("");
-    setNotice("已生成新的重排草稿，确认后才会更新提醒和今日时间线。");
-    setView("list");
+  async function commitBlockerAdjustment(
+    nextTasks: Task[],
+    nextSchedule: ScheduledTask[],
+    reason: string,
+    successNotice: string,
+    pausedSeconds?: number,
+  ) {
+    setLoading(true);
+    try {
+      if (!await pendingSave.current) throw new Error('保存失败');
+      const state = await window.aiTodo.confirmPlan({
+        day,
+        tasks: nextTasks,
+        availability,
+        schedule: nextSchedule,
+        reason,
+      });
+      setTasks(state.tasks);
+      setSchedule(state.schedule);
+      setVersion(state.version);
+      setConfirmed(true);
+      if (pausedSeconds !== undefined) setPausedCountdownSeconds(pausedSeconds);
+      closeBlockerFlow();
+      setNotice(successNotice);
+    } catch {
+      setNotice('计划调整失败，当前安排未改变，请重试。');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function delayCurrentTask(minutes: number) {
+    if (!currentTask || !blocker.reason || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440) return;
+    const startMinutes = currentTask.startMinutes ?? now.getHours() * 60 + now.getMinutes();
+    const duration = currentTask.duration + minutes;
+    const nextTasks = tasks.map(task => task.id === currentTask.id ? { ...task, duration } : task);
+    const nextSchedule = reflowScheduleFromTask(schedule, currentTask.id, startMinutes, duration);
+    const pausedSeconds = pausedCountdownSeconds === null ? undefined : pausedCountdownSeconds + minutes * 60;
+    void commitBlockerAdjustment(
+      nextTasks,
+      nextSchedule,
+      `遇到阻碍：${blocker.reason}；当前任务延时 ${minutes} 分钟`,
+      `“${currentTask.title}”已延时 ${minutes} 分钟，后续任务和提醒已顺延。`,
+      pausedSeconds,
+    );
+  }
+
+  function openBlockerEditor() {
+    if (!currentTask) return;
+    const startMinutes = currentTask.startMinutes ?? now.getHours() * 60 + now.getMinutes();
+    const endMinutes = currentTask.endMinutes ?? startMinutes + currentTask.duration;
+    const label = (minutes: number) => {
+      const value = Math.max(0, Math.min(1439, Math.round(minutes)));
+      return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+    };
+    setBlockerEdit({
+      title: currentTask.title,
+      priority: currentTask.priority,
+      start: label(startMinutes),
+      end: label(endMinutes),
+    });
+    setBlockerEditError("");
+  }
+
+  function saveBlockerEdit() {
+    if (!currentTask || !blocker.reason || !blockerEdit) return;
+    const title = blockerEdit.title.trim();
+    const startMinutes = parseTime(blockerEdit.start);
+    const endMinutes = parseTime(blockerEdit.end);
+    if (!title) {
+      setBlockerEditError('请输入任务名称。');
+      return;
+    }
+    if (endMinutes <= startMinutes) {
+      setBlockerEditError('结束时间需要晚于开始时间。');
+      return;
+    }
+    const duration = endMinutes - startMinutes;
+    const nextTasks = tasks.map(task => task.id === currentTask.id
+      ? { ...task, title, priority: blockerEdit.priority, duration }
+      : task);
+    const nextSchedule = reflowScheduleFromTask(schedule, currentTask.id, startMinutes, duration)
+      .map(task => task.id === currentTask.id ? { ...task, title, priority: blockerEdit.priority } : task);
+    const pausedSeconds = pausedCountdownSeconds === null
+      ? undefined
+      : Math.max(0, Math.round((endMinutes - (now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60)) * 60));
+    void commitBlockerAdjustment(
+      nextTasks,
+      nextSchedule,
+      `遇到阻碍：${blocker.reason}；快捷修改任务与时段`,
+      `“${title}”及对应时段已更新，后续任务和提醒已同步。`,
+      pausedSeconds,
+    );
   }
 
   async function clearData() {
@@ -705,6 +795,9 @@ export function App() {
               onBlocker={() => {
                 setBlocker({});
                 setCustomReason("");
+                setCustomDelay("");
+                setBlockerEdit(null);
+                setBlockerEditError("");
                 setBlockerOpen(true);
               }}
               onReview={() => setStep("list")}
@@ -716,7 +809,7 @@ export function App() {
       </AppShell>
 
       {shouldShowBlockerPrompt(view, blockerOpen, blocker.reason) && (
-        <Modal label="现在遇到了什么情况？" onClose={() => setBlockerOpen(false)}>
+        <Modal label="现在遇到了什么情况？" onClose={closeBlockerFlow}>
           <div className="modal-icon">
             <AlertCircle size={20} />
           </div>
@@ -724,7 +817,7 @@ export function App() {
           <p>先了解原因，再决定是否需要调整剩余计划。</p>
           <div className="reason-grid">
             {reasons.map((reason) => (
-              <button key={reason} onClick={() => void chooseReason(reason)}>
+              <button key={reason} onClick={() => chooseReason(reason)}>
                 {reason}
                 <ChevronRight size={16} />
               </button>
@@ -740,58 +833,73 @@ export function App() {
             <button
               className="secondary"
               disabled={!normalizeBlockerReason(customReason)}
-              onClick={() => void chooseReason(customReason)}
+              onClick={() => chooseReason(customReason)}
             >
               使用此原因
             </button>
           </div>
           <button
             className="modal-close"
-            onClick={() => {
-              setBlocker({});
-              setCustomReason("");
-              setBlockerOpen(false);
-            }}
+            onClick={closeBlockerFlow}
           >
             暂时不调整
           </button>
         </Modal>
       )}
-      {blockerOpen && blocker.reason && blocker.suggestion && (
-        <Modal label="这是建议的新安排" onClose={() => setBlockerOpen(false)}>
-          <div className="modal-icon success">
-            <Sparkles size={20} />
+      {blockerOpen && blocker.reason && !blockerEdit && currentTask && (
+        <Modal label="需要多一点时间吗？" onClose={closeBlockerFlow}>
+          <div className="modal-icon">
+            <Clock3 size={20} />
           </div>
-          <h2>这是建议的新安排</h2>
-          <p>原因已记录，系统不会直接修改当前计划。</p>
+          <h2>需要多一点时间吗？</h2>
+          <p>延长当前任务的结束时间，后续任务和提醒会一起顺延。</p>
           <div className="reason-chip">已记录：{blocker.reason}</div>
-          <div className="impact-list">
-            {blocker.suggestion.schedule
-              .filter((task) => task.scheduled)
-              .slice(0, 4)
-              .map((task) => (
-                <div key={task.id}>
-                  <span>{task.title}</span>
-                  <strong>{formatScheduleLabel(task)}</strong>
-                </div>
-              ))}
+          <div className="delay-task-summary">
+            <strong>{currentTask.title}</strong>
+            <span>{currentTask.startLabel}–{currentTask.endLabel}</span>
           </div>
-          <div className="modal-actions">
-            <button
-              className="secondary"
-              onClick={() => {
-                setBlocker({});
-                setCustomReason("");
-                setBlockerOpen(true);
-              }}
-            >
-              返回
-            </button>
-            <button className="primary" onClick={() => void applyReplan()}>
-              生成重排草稿
-              <ChevronRight size={16} />
-            </button>
+          <div className="delay-options" aria-label="延时时长">
+            {[10, 20, 30].map(minutes => (
+              <button key={minutes} className="delay-option" aria-label={`延时 ${minutes} 分钟`} disabled={loading} onClick={() => delayCurrentTask(minutes)}>
+                <strong>+{minutes}</strong><span>分钟</span>
+              </button>
+            ))}
           </div>
+          <form className="custom-delay" onSubmit={event => {
+            event.preventDefault();
+            const minutes = Number(customDelay);
+            if (Number.isInteger(minutes) && minutes > 0 && minutes <= 1440) delayCurrentTask(minutes);
+          }}>
+            <label htmlFor="custom-delay">自定义时长</label>
+            <div><input id="custom-delay" type="number" min="1" max="1440" step="1" placeholder="输入分钟数" value={customDelay} onChange={event => setCustomDelay(event.target.value)} /><button className="secondary" disabled={loading || !Number.isInteger(Number(customDelay)) || Number(customDelay) < 1 || Number(customDelay) > 1440}>延时</button></div>
+          </form>
+          <div className="blocker-alternative">
+            <span>延时不能解决？</span>
+            <button className="link-button" onClick={openBlockerEditor}><PencilLine size={14} />直接修改任务与时段</button>
+          </div>
+          <button className="modal-close" onClick={() => setBlocker({})}>
+            返回选择原因
+          </button>
+        </Modal>
+      )}
+      {blockerOpen && blocker.reason && blockerEdit && currentTask && (
+        <Modal label="快捷修改任务与时段" onClose={closeBlockerFlow}>
+          <div className="modal-icon"><PencilLine size={20} /></div>
+          <h2>快捷修改任务与时段</h2>
+          <p>保存后，后续任务和提醒会从新的结束时间继续顺延。</p>
+          <form className="blocker-editor" onSubmit={event => { event.preventDefault(); saveBlockerEdit(); }}>
+            <label>任务名称<input required maxLength={200} value={blockerEdit.title} onChange={event => setBlockerEdit({ ...blockerEdit, title: event.target.value })} /></label>
+            <div className="blocker-editor-grid">
+              <label>优先级<select value={blockerEdit.priority} onChange={event => setBlockerEdit({ ...blockerEdit, priority: event.target.value as Task['priority'] })}><option>高</option><option>中</option><option>低</option></select></label>
+              <label>开始时间<input type="time" required value={blockerEdit.start} onChange={event => setBlockerEdit({ ...blockerEdit, start: event.target.value })} /></label>
+              <label>结束时间<input type="time" required value={blockerEdit.end} onChange={event => setBlockerEdit({ ...blockerEdit, end: event.target.value })} /></label>
+            </div>
+            {blockerEditError && <p className="blocker-edit-error" role="alert">{blockerEditError}</p>}
+            <div className="modal-actions">
+              <button type="button" className="secondary" onClick={() => { setBlockerEdit(null); setBlockerEditError(""); }}>返回延时选项</button>
+              <button className="primary" disabled={loading}>保存并更新时间</button>
+            </div>
+          </form>
         </Modal>
       )}
     </div>

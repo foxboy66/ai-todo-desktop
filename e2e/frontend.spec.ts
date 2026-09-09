@@ -354,7 +354,7 @@ test("reflows following task times and warns when the new timeline exceeds avail
   await expect(page.getByLabel(tasks[1].title + " 结束时间", { exact: true })).toHaveValue("17:30");
 });
 
-test("restores a confirmed plan, receives reminders and confirms replan only explicitly", async ({
+test("restores a confirmed plan, delays a blocked task and edits its time in place", async ({
   page,
 }, info) => {
   const { calls, errors } = await boot(page, { state: confirmedState() });
@@ -383,23 +383,53 @@ test("restores a confirmed plan, receives reminders and confirms replan only exp
   await expect(page.getByRole("button", { name: "使用此原因" })).toBeDisabled();
   await page.getByLabel("自定义阻碍原因").fill("  资料需要补充  ");
   await page.getByRole("button", { name: "使用此原因" }).click();
-  await expect(page.getByRole("heading", { name: "这是建议的新安排" })).toBeVisible();
-  expect(calls.find((call) => call.method === "suggestReplan")?.input.reason).toBe("资料需要补充");
+  await expect(page.getByRole("heading", { name: "需要多一点时间吗？" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "延时 10 分钟" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "延时 20 分钟" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "延时 30 分钟" })).toBeVisible();
+  await expect(page.getByLabel("自定义时长")).toBeVisible();
+  expect(calls.filter((call) => call.method === "suggestReplan")).toHaveLength(0);
   expect(calls.filter((call) => call.method === "confirmPlan")).toHaveLength(0);
-  await page.screenshot({ path: info.outputPath("replan-dialog.png"), fullPage: true });
-  await page.getByRole("button", { name: "生成重排草稿" }).click();
-  await expect(page.getByRole("heading", { name: "今天的任务" })).toBeVisible();
-  expect(calls.filter((call) => call.method === "confirmPlan")).toHaveLength(0);
-  await expect(page.getByLabel("完成 MVP Demo 交互 预计耗时（分钟）")).toHaveValue("120");
-  await page.getByRole("button", { name: "确认并开始" }).click();
-  await expect(page.getByRole("status")).toContainText("计划 v3 已确认");
+  await page.screenshot({ path: info.outputPath("blocker-delay-dialog.png"), fullPage: true });
+  await page.getByRole("button", { name: "延时 10 分钟" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("已延时 10 分钟");
+  const delayCall = calls.filter((call) => call.method === "confirmPlan").at(-1)!.input;
+  expect(delayCall.reason).toContain("资料需要补充");
+  expect(delayCall.tasks[0].duration).toBe(starterTasks[0].duration + 10);
+  expect(delayCall.schedule[1].startMinutes).toBe(delayCall.schedule[0].endMinutes);
+
   await page.getByRole("button", { name: "遇到阻碍", exact: true }).click();
   await page.getByRole("button", { name: "临时事项打断", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "这是建议的新安排" })).toBeVisible();
-  await page.getByRole("button", { name: "返回", exact: true }).click();
+  await page.getByLabel("自定义时长").fill("17");
+  await page.getByRole("button", { name: "延时", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("已延时 17 分钟");
+  const customDelayCall = calls.filter((call) => call.method === "confirmPlan").at(-1)!.input;
+  expect(customDelayCall.reason).toContain("延时 17 分钟");
+  expect(customDelayCall.tasks[0].duration).toBe(starterTasks[0].duration + 27);
+
+  await page.getByRole("button", { name: "遇到阻碍", exact: true }).click();
+  await page.getByRole("button", { name: "临时事项打断", exact: true }).click();
+  await page.getByRole("button", { name: "直接修改任务与时段", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "快捷修改任务与时段" });
+  await editor.getByLabel("任务名称").fill("补充 Demo 交互");
+  await editor.getByLabel("优先级").selectOption("高");
+  await editor.getByLabel("开始时间").fill("08:15");
+  await editor.getByLabel("结束时间").fill("10:45");
+  await editor.getByRole("button", { name: "保存并更新时间" }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("对应时段已更新");
+  const editCall = calls.filter((call) => call.method === "confirmPlan").at(-1)!.input;
+  expect(editCall.tasks[0]).toMatchObject({ title: "补充 Demo 交互", priority: "高", duration: 150 });
+  expect(editCall.schedule[0]).toMatchObject({ title: "补充 Demo 交互", startMinutes: 495, endMinutes: 645 });
+  expect(editCall.schedule[1].startMinutes).toBe(645);
+
+  await page.getByRole("button", { name: "遇到阻碍", exact: true }).click();
+  await page.getByRole("button", { name: "精力不足", exact: true }).click();
+  await page.getByRole("button", { name: "返回选择原因", exact: true }).click();
   await page.getByRole("button", { name: "暂时不调整", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  expect(calls.filter((call) => call.method === "confirmPlan")).toHaveLength(1);
+  expect(calls.filter((call) => call.method === "confirmPlan")).toHaveLength(3);
   expect(errors).toEqual([]);
 });
 
